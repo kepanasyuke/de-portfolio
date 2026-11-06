@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: dq-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["dq-exporter:9109"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

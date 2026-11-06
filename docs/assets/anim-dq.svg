@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="Data quality: правила компилируются в SQL, нарушенные строки подсвечиваются, гейт закрывается">
+  <style>
+    .bg   { fill: #0b1020; }
+    .box  { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t    { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s    { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .cell { fill: #22305c; }
+    .bad  { fill: #ff6b6b; animation: flash 2.8s ease-in-out infinite; }
+    .b2   { animation-delay: .35s; }
+    .b3   { animation-delay: .7s; }
+    .ok   { fill: #2f6f5f; }
+    .wire { fill: none; stroke: #24305a; stroke-width: 5; stroke-linecap: round; }
+    .flow { fill: none; stroke: #4dd4ac; stroke-width: 2; stroke-dasharray: 6 12; animation: dash 1.2s linear infinite; }
+    .gate { animation: gate 2.8s ease-in-out infinite; transform-origin: 700px 120px; }
+    .bar  { fill: #4dd4ac; animation: grow 2.8s ease-in-out infinite; transform-origin: 640px 190px; }
+    @keyframes dash { to { stroke-dashoffset: -34; } }
+    @keyframes flash { 0%, 100% { opacity: .3; } 45%, 65% { opacity: 1; } }
+    @keyframes gate { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-28deg); } }
+    @keyframes grow { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .bad, .flow, .gate, .bar { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <rect class="box" x="24" y="28" width="180" height="88" rx="10"/>
+  <text class="t" x="114" y="50" text-anchor="middle">rules.yml</text>
+  <text class="s" x="114" y="70" text-anchor="middle">unique · not_null</text>
+  <text class="s" x="114" y="86" text-anchor="middle">referential_integrity</text>
+  <text class="s" x="114" y="102" text-anchor="middle">freshness · expression</text>
+
+  <line class="wire" x1="204" y1="72" x2="262" y2="72"/>
+  <line class="flow" x1="204" y1="72" x2="262" y2="72"/>
+
+  <rect class="box" x="262" y="28" width="150" height="88" rx="10"/>
+  <text class="t" x="337" y="52" text-anchor="middle">compile</text>
+  <text class="s" x="337" y="72" text-anchor="middle">один SELECT</text>
+  <text class="s" x="337" y="88" text-anchor="middle">failed_rows</text>
+  <text class="s" x="337" y="104" text-anchor="middle">checked_rows</text>
+
+  <line class="wire" x1="412" y1="72" x2="470" y2="72"/>
+  <line class="flow" x1="412" y1="72" x2="470" y2="72"/>
+
+  <rect class="box" x="470" y="28" width="150" height="88" rx="10"/>
+  <text class="t" x="545" y="50" text-anchor="middle">DWH</text>
+  <g>
+    <rect class="cell" x="486" y="62" width="26" height="14" rx="3"/>
+    <rect class="bad" x="516" y="62" width="26" height="14" rx="3"/>
+    <rect class="cell" x="546" y="62" width="26" height="14" rx="3"/>
+    <rect class="cell" x="576" y="62" width="26" height="14" rx="3"/>
+    <rect class="cell" x="486" y="80" width="26" height="14" rx="3"/>
+    <rect class="cell" x="516" y="80" width="26" height="14" rx="3"/>
+    <rect class="bad b2" x="546" y="80" width="26" height="14" rx="3"/>
+    <rect class="cell" x="576" y="80" width="26" height="14" rx="3"/>
+    <rect class="cell" x="486" y="98" width="26" height="14" rx="3"/>
+    <rect class="cell" x="516" y="98" width="26" height="14" rx="3"/>
+    <rect class="cell" x="546" y="98" width="26" height="14" rx="3"/>
+    <rect class="bad b3" x="576" y="98" width="26" height="14" rx="3"/>
+  </g>
+
+  <line class="wire" x1="620" y1="72" x2="678" y2="72"/>
+  <line class="flow" x1="620" y1="72" x2="678" y2="72"/>
+
+  <rect class="box" x="678" y="28" width="118" height="88" rx="10"/>
+  <text class="t" x="737" y="50" text-anchor="middle">gate</text>
+  <text class="s" x="737" y="70" text-anchor="middle">exit 1</text>
+  <text class="s" x="737" y="86" text-anchor="middle">пайплайн стоп</text>
+  <g class="gate">
+    <rect x="716" y="96" width="42" height="6" rx="3" fill="#ff6b6b"/>
+  </g>
+
+  <text class="s" x="24" y="150">результат → meta.dq_result</text>
+  <rect class="box" x="24" y="158" width="580" height="42" rx="10"/>
+  <text class="s" x="40" y="176">dq_rule_status · dq_rule_failed_rows · dq_seconds_since_last_run</text>
+  <rect class="bar" x="640" y="158" width="26" height="42" rx="4"/>
+  <text class="s" x="700" y="184">Grafana</text>
+</svg>

@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="Игра: три пайплайна, записи едут по трекам, очереди и карантин">
+  <style>
+    .bg   { fill: #0b1020; }
+    .box  { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t    { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s    { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .track{ fill: none; stroke: #24305a; stroke-width: 8; stroke-linecap: round; }
+    .dash { fill: none; stroke: #4dd4ac; stroke-width: 2; stroke-dasharray: 5 11; animation: dash 1.2s linear infinite; }
+    .dot  { fill: #4dd4ac; }
+    .dirt { fill: #ff6b6b; }
+    .q    { fill: #ffb454; animation: fill 2.6s ease-in-out infinite; transform-box: fill-box; transform-origin: bottom; }
+    .q2   { animation-delay: .5s; }
+    .q3   { animation-delay: 1s; }
+    .r1 { animation: run 2.8s linear infinite; }
+    .r2 { animation: run 2.8s linear infinite .7s; }
+    .r3 { animation: run 2.8s linear infinite 1.4s; }
+    .r4 { animation: run 2.8s linear infinite 2.1s; }
+    .mod { animation: pulse 2.2s ease-in-out infinite; }
+    .m2  { animation-delay: .3s; }
+    .m3  { animation-delay: .6s; }
+    @keyframes dash { to { stroke-dashoffset: -32; } }
+    @keyframes run  { from { transform: translateX(0); } to { transform: translateX(560px); } }
+    @keyframes fill { 0%, 100% { transform: scaleY(.2); } 50% { transform: scaleY(1); } }
+    @keyframes pulse { 0%, 100% { stroke: #23305a; } 50% { stroke: #4dd4ac; } }
+    @media (prefers-reduced-motion: reduce) { .dash, .dot, .q, .r1, .r2, .r3, .r4, .mod { animation: none; } }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <text class="s" x="24" y="26">волна 3 / 6 · поток 2.8 записей/с · брак 22%</text>
+  <text class="t" x="700" y="26" text-anchor="end">SLO 96% · 98%</text>
+
+  <g>
+    <line class="track" x1="60" y1="62" x2="756" y2="62"/>
+    <line class="dash" x1="60" y1="62" x2="756" y2="62"/>
+    <circle class="dot r1" cx="70" cy="62" r="5"/>
+    <circle class="dirt r2" cx="70" cy="58" r="4"/>
+    <circle class="dot r3" cx="70" cy="66" r="4"/>
+    <rect class="box mod" x="270" y="42" width="90" height="40" rx="8"/>
+    <text class="s" x="315" y="67" text-anchor="middle">Clean</text>
+    <rect class="box mod m2" x="470" y="42" width="90" height="40" rx="8"/>
+    <text class="s" x="515" y="67" text-anchor="middle">Load</text>
+  </g>
+
+  <g>
+    <line class="track" x1="60" y1="122" x2="756" y2="122"/>
+    <line class="dash" x1="60" y1="122" x2="756" y2="122"/>
+    <circle class="dot r4" cx="70" cy="122" r="5"/>
+    <circle class="dirt r1" cx="70" cy="118" r="4"/>
+    <rect class="box mod" x="270" y="102" width="90" height="40" rx="8"/>
+    <text class="s" x="315" y="127" text-anchor="middle">Clean</text>
+    <rect class="box mod m3" x="470" y="102" width="90" height="40" rx="8"/>
+    <text class="s" x="515" y="127" text-anchor="middle">Load</text>
+  </g>
+
+  <g>
+    <line class="track" x1="60" y1="182" x2="756" y2="182"/>
+    <line class="dash" x1="60" y1="182" x2="756" y2="182"/>
+    <circle class="dot r2" cx="70" cy="182" r="5"/>
+    <rect class="box mod m2" x="270" y="162" width="90" height="40" rx="8"/>
+    <text class="s" x="315" y="187" text-anchor="middle">Clean</text>
+    <rect class="box mod" x="470" y="162" width="90" height="40" rx="8"/>
+    <text class="s" x="515" y="187" text-anchor="middle">Load</text>
+  </g>
+
+  <rect class="q" x="400" y="150" width="14" height="32" rx="3"/>
+  <rect class="q q2" x="418" y="150" width="14" height="32" rx="3"/>
+  <rect class="q q3" x="436" y="150" width="14" height="32" rx="3"/>
+
+  <text class="s" x="620" y="52">← карантин</text>
+  <text class="s" x="660" y="192">в DWH</text>
+  <text class="s" x="24" y="212">очередь &gt; 10 → таймауты и падение SLO: backpressure видно глазами</text>
+</svg>

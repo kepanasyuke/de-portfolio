@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="ClickHouse: колоночное чтение, март на AggregatingMergeTree и сравнение стоимости запросов">
+  <style>
+    .bg    { fill: #0b1020; }
+    .box   { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t     { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s     { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .col   { fill: #22305c; }
+    .used  { fill: #4dd4ac; animation: use 3s ease-in-out infinite; }
+    .skip  { fill: #1a2445; }
+    .u2    { animation-delay: .25s; }
+    .u3    { animation-delay: .5s; }
+    .scan  { fill: #ff6b6b; animation: scanWide 3s ease-in-out infinite; }
+    .mart  { fill: #4dd4ac;animation: scanNarrow 3s ease-in-out infinite; }
+    @keyframes use { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+    @keyframes scanWide { 0%, 100% { transform: scaleX(.55); } 50% { transform: scaleX(1); } }
+    @keyframes scanNarrow { 0%, 100% { transform: scaleX(.12); } 50% { transform: scaleX(.22); } }
+    @media (prefers-reduced-motion: reduce) {
+      .used, .scan, .mart { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <rect class="box" x="24" y="26" width="360" height="120" rx="10"/>
+  <text class="t" x="40" y="48">fact_sales · ReplacingMergeTree</text>
+  <text class="s" x="40" y="64">ORDER BY (order_date, customer_id, product_id, item)</text>
+
+  <g>
+    <rect class="col" x="40" y="76" width="34" height="52" rx="3"/>
+    <rect class="col" x="82" y="76" width="34" height="52" rx="3"/>
+    <rect class="col" x="124" y="76" width="34" height="52" rx="3"/>
+    <rect class="used" x="166" y="76" width="34" height="52" rx="3"/>
+    <rect class="used u2" x="208" y="76" width="34" height="52" rx="3"/>
+    <rect class="skip" x="250" y="76" width="34" height="52" rx="3"/>
+    <rect class="skip" x="292" y="76" width="34" height="52" rx="3"/>
+    <rect class="skip" x="334" y="76" width="34" height="52" rx="3"/>
+  </g>
+  <text class="s" x="40" y="142">читаются только нужные колонки · LowCardinality + ZSTD</text>
+
+  <rect class="box" x="404" y="26" width="392" height="120" rx="10"/>
+  <text class="t" x="420" y="48">daily_revenue · AggregatingMergeTree</text>
+  <text class="s" x="420" y="64">uniqExactState / sumState на вставке</text>
+  <rect x="420" y="76" width="360" height="18" rx="4" class="scan" style="transform-box: fill-box; transform-origin: left"/>
+  <text class="s" x="420" y="110">скан факта</text>
+  <rect x="420" y="118" width="360" height="18" rx="4" class="mart" style="transform-box: fill-box; transform-origin: left"/>
+  <text class="s" x="420" y="152">merge состояний</text>
+
+  <rect class="box" x="24" y="162" width="772" height="42" rx="10"/>
+  <text class="s" x="40" y="180">PREWHERE · uniqCombined(12) · argMax вместо FINAL — каждое решение измерено</text>
+  <text class="s" x="40" y="196">bench/benchmark.py --rows 2000000 --runs 5 → медиана, серверное время</text>
+</svg>

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="Стриминг: Kafka → Spark Structured Streaming → озеро → DDS, дедупликация и карантин">
+  <style>
+    .bg   { fill: #0b1020; }
+    .box  { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t    { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s    { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .track{ fill: none; stroke: #24305a; stroke-width: 8; stroke-linecap: round; }
+    .flow { fill: none; stroke: #4dd4ac; stroke-width: 2; stroke-dasharray: 6 12; animation: dash 1s linear infinite; }
+    .dot  { fill: #4dd4ac; }
+    .dup  { fill: #ffb454; }
+    .wm   { fill: #ffb454; opacity: .25; animation: slide 4s ease-in-out infinite; }
+    .d1 { animation: run 2.6s linear infinite; }
+    .d2 { animation: run 2.6s linear infinite .55s; }
+    .d3 { animation: run 2.6s linear infinite 1.1s; }
+    .d4 { animation: run 2.6s linear infinite 1.65s; }
+    .bad { animation: drop 2.6s ease-in infinite 1.1s; }
+    @keyframes dash { to { stroke-dashoffset: -36; } }
+    @keyframes run  { from { transform: translateX(0); } to { transform: translateX(330px); } }
+    @keyframes slide { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(60px); } }
+    @keyframes drop { 0%, 40% { opacity: 0; transform: translateY(0); } 70% { opacity: 1; transform: translateY(26px); } 100% { opacity: 0; transform: translateY(40px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .flow, .dot, .dup, .wm, .bad { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <rect class="box" x="24" y="30" width="150" height="90" rx="10"/>
+  <text class="t" x="99" y="52" text-anchor="middle">Kafka</text>
+  <text class="s" x="99" y="70" text-anchor="middle">order.events</text>
+  <rect x="40" y="82" width="118" height="6" rx="3" fill="#22305c"/>
+  <rect x="40" y="94" width="118" height="6" rx="3" fill="#22305c"/>
+  <text class="s" x="99" y="114" text-anchor="middle">key = order_id</text>
+
+  <line class="track" x1="174" y1="75" x2="330" y2="75"/>
+  <line class="flow" x1="174" y1="75" x2="330" y2="75"/>
+  <circle class="dot d1" cx="182" cy="75" r="4"/>
+  <circle class="dot d2" cx="182" cy="71" r="3.5"/>
+  <circle class="dup d3" cx="182" cy="79" r="3.5"/>
+  <circle class="dot d4" cx="182" cy="75" r="3.5"/>
+
+  <rect class="box" x="330" y="30" width="180" height="90" rx="10"/>
+  <text class="t" x="420" y="52" text-anchor="middle">Spark Streaming</text>
+  <text class="s" x="420" y="70" text-anchor="middle">from_json · watermark 1h</text>
+  <text class="s" x="420" y="86" text-anchor="middle">dropDuplicates(event_id)</text>
+  <rect class="wm" x="346" y="96" width="60" height="10" rx="4"/>
+
+  <line class="track" x1="510" y1="75" x2="666" y2="75"/>
+  <line class="flow" x1="510" y1="75" x2="666" y2="75"/>
+
+  <rect class="box" x="666" y="30" width="130" height="90" rx="10"/>
+  <text class="t" x="731" y="52" text-anchor="middle">lake</text>
+  <text class="s" x="731" y="70" text-anchor="middle">parquet</text>
+  <text class="s" x="731" y="86" text-anchor="middle">event_date=…</text>
+  <text class="s" x="731" y="102" text-anchor="middle">+ checkpoint</text>
+
+  <circle class="dup bad" cx="600" cy="110" r="4"/>
+
+  <rect class="box" x="330" y="152" width="466" height="46" rx="10"/>
+  <text class="s" x="350" y="174">компакция каждые 15 мин → stg.order_events → dds.order_events (он же карантин переходов)</text>
+
+  <text class="s" x="24" y="176">at-least-once</text>
+  <text class="s" x="24" y="192">дедуп в два слоя</text>
+  <text class="s" x="24" y="208">амбер: точность ↔ стоимость</text>
+</svg>

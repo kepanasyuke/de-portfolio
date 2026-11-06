@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пайплайн: ночной релиз</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121a33;
+    --ink: #e8eefc;
+    --muted: #8ea0c9;
+    --accent: #4dd4ac;
+    --warn: #ffb454;
+    --bad: #ff6b6b;
+    --line: #23305a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 20% -10%, #17224a 0%, var(--bg) 55%);
+    color: var(--ink);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  .wrap { width: min(1000px, 100%); }
+  header h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .3px; }
+  header p { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  .hud {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+  .stat .value { font-size: 19px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .value.good { color: var(--accent); }
+  .value.warn { color: var(--warn); }
+  .value.bad { color: var(--bad); }
+  .board {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 24px;
+    background: rgba(8, 12, 26, .82);
+    backdrop-filter: blur(2px);
+  }
+  .overlay.show { display: flex; }
+  .overlay h2 { margin: 0; font-size: 26px; }
+  .overlay p { margin: 0; color: var(--muted); max-width: 460px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  button {
+    font: inherit;
+    color: var(--ink);
+    background: #1b2547;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: transform .08s ease, background .15s ease;
+  }
+  button:hover { background: #243064; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: #06251d; border-color: transparent; font-weight: 600; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-top: 14px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 14px; }
+  kbd {
+    background: #1b2547; border: 1px solid var(--line); border-radius: 6px;
+    padding: 1px 6px; font-size: 12px; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Пайплайн: ночной релиз</h1>
+    <p>Держи SLO и качество данных, пока нагрузка растёт. Клик по модулю — апгрейд за кредиты.</p>
+  </header>
+
+  <div class="hud">
+    <div class="stat"><div class="label">Волна</div><div class="value" id="hud-wave">1 / 6</div></div>
+    <div class="stat"><div class="label">Кредиты</div><div class="value" id="hud-credits">40</div></div>
+    <div class="stat"><div class="label">SLO</div><div class="value" id="hud-slo">100%</div></div>
+    <div class="stat"><div class="label">Качество</div><div class="value" id="hud-quality">100%</div></div>
+    <div class="stat"><div class="label">Доставлено</div><div class="value" id="hud-delivered">0</div></div>
+    <div class="stat"><div class="label">В карантине</div><div class="value" id="hud-quarantined">0</div></div>
+  </div>
+
+  <div class="board">
+    <canvas id="board" width="1000" height="430"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="overlay-title">Готов?</h2>
+      <p id="overlay-text">Шесть волн нагрузки, три пайплайна, один ночной релиз.</p>
+      <div class="row">
+        <button class="primary" id="overlay-btn">Начать</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button id="btn-pause">Пауза</button>
+    <button id="btn-restart">Заново</button>
+    <button id="btn-upgrade">Апгрейд узкого места</button>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#4dd4ac"></i>валидная запись</span>
+    <span><i style="background:#ff6b6b"></i>грязная запись</span>
+    <span><i style="background:#ffb454"></i>очередь / backpressure</span>
+  </div>
+
+  <p class="hint">
+    <kbd>пробел</kbd> — пауза, <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> — выбрать пайплайн,
+    <kbd>U</kbd> — апгрейд выбранного, <kbd>R</kbd> — заново.
+    Модуль <b>Clean</b> отбраковывает грязные записи в карантин, <b>Load</b> доставляет.
+    Очередь больше 10 записей — таймауты и падение SLO.
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STATIONS = ["Parse", "Clean", "Load"];
+  var WAVES = 6;
+  var WAVE_SECONDS = 24;
+  var MAX_QUEUE = 10;
+  var MAX_LEVEL = 8;
+
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var overlay = document.getElementById("overlay");
+  var overlayTitle = document.getElementById("overlay-title");
+  var overlayText = document.getElementById("overlay-text");
+  var overlayBtn = document.getElementById("overlay-btn");
+
+  var hud = {
+    wave: document.getElementById("hud-wave"),
+    credits: document.getElementById("hud-credits"),
+    slo: document.getElementById("hud-slo"),
+    quality: document.getElementById("hud-quality"),
+    delivered: document.getElementById("hud-delivered"),
+    quarantined: document.getElementById("hud-quarantined")
+  };
+
+  var W = 1000;
+  var H = 430;
+  var state = null;
+  var lastFrame = 0;
+  var accumulator = 0;
+  var STEP = 1 / 60;
+
+  function makeModule(laneIndex, index) {
+    return {
+      lane: laneIndex,
+      index: index,
+      name: STATIONS[index],
+      level: 1,
+      queue: [],
+      budget: 0,
+      pulse: 0,
+      glow: 0
+    };
+  }
+
+  function newState() {
+    var lanes = [];
+    for (var i = 0; i < 3; i++) {
+      var modules = [];
+      for (var j = 0; j < STATIONS.length; j++) {
+        modules.push(makeModule(i, j));
+      }
+      lanes.push({ id: i, modules: modules, moving: [], spawnAcc: 0, speed: 120 });
+    }
+    return {
+      lanes: lanes,
+      phase: "ready",
+      paused: false,
+      wave: 1,
+      waveTime: 0,
+      credits: 40,
+      delivered: 0,
+      quarantined: 0,
+      dropped: 0,
+      leaked: 0,
+      selected: 0,
+      nextId: 1,
+      time: 0,
+      processed: 0
+    };
+  }
+
+  function laneY(index) {
+    return 78 + index * 128;
+  }
+
+  function stationX(index) {
+    return 250 + index * 250;
+  }
+
+  function capacity(module) {
+    return 1.1 + 0.55 * module.level;
+  }
+
+  function catchRate(module) {
+    return Math.min(0.985, 0.5 + 0.07 * module.level);
+  }
+
+  function upgradeCost(module) {
+    return Math.round(28 * Math.pow(1.55, module.level - 1));
+  }
+
+  function spawnRate() {
+    return 1.6 * Math.pow(1.32, state.wave - 1);
+  }
+
+  function dirtyShare() {
+    return Math.min(0.5, 0.12 + 0.05 * (state.wave - 1));
+  }
+
+  function resetGame() {
+    state = newState();
+    ctx.clearRect(0, 0, W, H);
+    render();
+    updateHud();
+    showOverlay("Готов?", "Шесть волн нагрузки, три пайплайна, один ночной релиз.", "Начать");
+  }
+
+  function showOverlay(title, text, button) {
+    overlayTitle.textContent = title;
+    overlayText.textContent = text;
+    overlayBtn.textContent = button;
+    overlay.classList.add("show");
+  }
+
+  function hideOverlay() {
+    overlay.classList.remove("show");
+  }
+
+  function startRun() {
+    state.phase = "running";
+    state.paused = false;
+    hideOverlay();
+  }
+
+  function slo() {
+    var attempts = state.delivered + state.dropped;
+    if (attempts === 0) return 1;
+    return state.delivered / attempts;
+  }
+
+  function quality() {
+    var seen = state.delivered + state.leaked;
+    if (seen === 0) return 1;
+    return state.delivered / seen;
+  }
+
+  function fmtPercent(value) {
+    return Math.round(value * 100) + "%";
+  }
+
+  function updateHud() {
+    hud.wave.textContent = state.wave + " / " + WAVES;
+    hud.credits.textContent = String(state.credits);
+    hud.slo.textContent = fmtPercent(slo());
+    hud.slo.className = "value " + (slo() >= 0.95 ? "good" : slo() >= 0.9 ? "warn" : "bad");
+    hud.quality.textContent = fmtPercent(quality());
+    hud.quality.className = "value " + (quality() >= 0.98 ? "good" : quality() >= 0.95 ? "warn" : "bad");
+    hud.delivered.textContent = String(state.delivered);
+    hud.quarantined.textContent = String(state.quarantined);
+  }
+
+  function spawn(lane) {
+    var dirty = Math.random() < dirtyShare();
+    lane.moving.push({
+      id: state.nextId++,
+      x: 30,
+      stage: 0,
+      dirty: dirty,
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+
+  function dropRecord() {
+    state.dropped += 1;
+  }
+
+  function resolveAtLoad(record) {
+    if (record.dirty) {
+      state.leaked += 1;
+    } else {
+      state.delivered += 1;
+      state.credits += 1;
+    }
+    state.processed += 1;
+  }
+
+  function processModule(module, dt) {
+    module.budget += capacity(module) * dt;
+    while (module.budget >= 1 && module.queue.length > 0) {
+      module.budget -= 1;
+      var record = module.queue.shift();
+      module.pulse = 1;
+      if (module.name === "Clean") {
+        if (record.dirty) {
+          if (Math.random() < catchRate(module)) {
+            state.quarantined += 1;
+            continue;
+          }
+        }
+        release(module, record);
+      } else if (module.name === "Load") {
+        resolveAtLoad(record);
+      } else {
+        release(module, record);
+      }
+    }
+    if (module.queue.length >= MAX_QUEUE) {
+      module.glow = 1;
+    }
+  }
+
+  function release(module, record) {
+    var lane = state.lanes[module.lane];
+    record.stage = module.index + 1;
+    record.x = stationX(module.index) + 26;
+    lane.moving.push(record);
+  }
+
+  function updateLane(lane, dt) {
+    if (state.phase === "running") {
+      lane.spawnAcc += spawnRate() * dt;
+      while (lane.spawnAcc >= 1) {
+        lane.spawnAcc -= 1;
+        spawn(lane);
+      }
+    }
+
+    var kept = [];
+    for (var i = 0; i < lane.moving.length; i++) {
+      var record = lane.moving[i];
+      record.x += lane.speed * dt;
+      var module = record.stage < STATIONS.length ? lane.modules[record.stage] : null;
+      if (module && record.x >= stationX(module.index) - 20) {
+        if (module.queue.length >= MAX_QUEUE) {
+          dropRecord();
+          module.glow = 1;
+          continue;
+        }
+        module.queue.push(record);
+        continue;
+      }
+      if (!module) {
+        resolveAtLoad(record);
+        continue;
+      }
+      kept.push(record);
+    }
+    lane.moving = kept;
+
+    for (var m = 0; m < lane.modules.length; m++) {
+      processModule(lane.modules[m], dt);
+    }
+  }
+
+  function step(dt) {
+    state.time += dt;
+    if (state.phase !== "running") {
+      return;
+    }
+    state.waveTime += dt;
+
+    for (var i = 0; i < state.lanes.length; i++) {
+      updateLane(state.lanes[i], dt);
+    }
+
+    for (var k = 0; k < state.lanes.length; k++) {
+      var modules = state.lanes[k].modules;
+      for (var q = 0; q < modules.length; q++) {
+        modules[q].pulse = Math.max(0, modules[q].pulse - dt * 3);
+        modules[q].glow = Math.max(0, modules[q].glow - dt * 1.4);
+      }
+    }
+
+    if (state.waveTime >= WAVE_SECONDS) {
+      endWave();
+    }
+  }
+
+  function endWave() {
+    var sloValue = slo();
+    var qualityValue = quality();
+    if (sloValue < 0.9 || qualityValue < 0.95) {
+      finish(false, "Релиз не прошёл", "SLO " + fmtPercent(sloValue) + ", качество " +
+        fmtPercent(qualityValue) + ". Пайплайн не выдержал нагрузку — данные ушли в таймаут.");
+      return;
+    }
+    if (state.wave >= WAVES) {
+      finish(true, "Релиз прошёл", "Доставлено " + state.delivered + " записей, в карантине " +
+        state.quarantined + ", SLO " + fmtPercent(sloValue) + ", качество " + fmtPercent(qualityValue) + ".");
+      return;
+    }
+    state.wave += 1;
+    state.waveTime = 0;
+    state.credits += 20;
+    updateHud();
+  }
+
+  function finish(won, title, text) {
+    state.phase = won ? "won" : "lost";
+    showOverlay(title, text, "Заново");
+  }
+
+  function upgradeModule(module) {
+    if (module.level >= MAX_LEVEL) return false;
+    var cost = upgradeCost(module);
+    if (state.credits < cost) return false;
+    state.credits -= cost;
+    module.level += 1;
+    module.pulse = 1;
+    updateHud();
+    return true;
+  }
+
+  function bottleneckLane() {
+    var weakest = 0;
+    var worst = Infinity;
+    for (var i = 0; i < state.lanes.length; i++) {
+      var lane = state.lanes[i];
+      var score = 0;
+      for (var j = 0; j < lane.modules.length; j++) {
+        score += lane.modules[j].queue.length * 3 + lane.modules[j].level;
+      }
+      if (score < worst) {
+        worst = score;
+        weakest = i;
+      }
+    }
+    return weakest;
+  }
+
+  function upgradeSelected() {
+    var lane = state.lanes[state.selected];
+    var cheapest = null;
+    for (var i = 0; i < lane.modules.length; i++) {
+      var module = lane.modules[i];
+      if (module.level >= MAX_LEVEL) continue;
+      if (cheapest === null || upgradeCost(module) < upgradeCost(cheapest)) {
+        cheapest = module;
+      }
+    }
+    if (cheapest) {
+      upgradeModule(cheapest);
+    }
+  }
+
+  function roundedRect(context, x, y, width, height, radius) {
+    context.beginPath();
+    context.moveTo(x + radius, y);
+    context.lineTo(x + width - radius, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + radius);
+    context.lineTo(x + width, y + height - radius);
+    context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    context.lineTo(x + radius, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - radius);
+    context.lineTo(x, y + radius);
+    context.quadraticCurveTo(x, y, x + radius, y);
+    context.closePath();
+  }
+
+  function drawTrack(lane) {
+    var y = laneY(lane.id);
+    var gradient = ctx.createLinearGradient(60, y, W - 40, y);
+    gradient.addColorStop(0, "rgba(35,48,90,.9)");
+    gradient.addColorStop(1, "rgba(35,48,90,.35)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 10;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(48, y);
+    ctx.lineTo(W - 34, y);
+    ctx.stroke();
+
+    var offset = (state.time * 40) % 24;
+    ctx.strokeStyle = "rgba(77,212,172,.35)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 18]);
+    ctx.lineDashOffset = -offset;
+    ctx.beginPath();
+    ctx.moveTo(48, y);
+    ctx.lineTo(W - 34, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawModule(module) {
+    var x = stationX(module.index);
+    var y = laneY(module.lane);
+    var boxW = 132;
+    var boxH = 64;
+    var left = x - boxW / 2;
+    var top = y - boxH / 2;
+
+    ctx.save();
+    if (module.glow > 0) {
+      ctx.shadowColor = "rgba(255,107,107,.9)";
+      ctx.shadowBlur = 22 * module.glow;
+    } else if (module.pulse > 0) {
+      ctx.shadowColor = "rgba(77,212,172,.8)";
+      ctx.shadowBlur = 18 * module.pulse;
+    }
+    ctx.fillStyle = "#182245";
+    roundedRect(ctx, left, top, boxW, boxH, 12);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = module.glow > 0.2 ? "rgba(255,107,107,.8)" : "rgba(35,48,90,1)";
+    ctx.lineWidth = 1.5;
+    roundedRect(ctx, left, top, boxW, boxH, 12);
+    ctx.stroke();
+
+    ctx.fillStyle = "#e8eefc";
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(module.name, left + 12, top + 22);
+
+    ctx.fillStyle = "#8ea0c9";
+    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.fillText("lvl " + module.level + " · " + capacity(module).toFixed(1) + "/s", left + 12, top + 40);
+
+    var queue = module.queue.length;
+    ctx.fillStyle = queue >= MAX_QUEUE ? "#ff6b6b" : queue > MAX_QUEUE * 0.6 ? "#ffb454" : "#4dd4ac";
+    ctx.textAlign = "right";
+    ctx.font = "600 12px 'Segoe UI', sans-serif";
+    ctx.fillText(String(queue), left + boxW - 12, top + 22);
+
+    var barW = boxW - 24;
+    var ratio = Math.min(1, queue / MAX_QUEUE);
+    ctx.fillStyle = "rgba(255,255,255,.08)";
+    roundedRect(ctx, left + 12, top + boxH - 16, barW, 6, 3);
+    ctx.fill();
+    if (ratio > 0) {
+      ctx.fillStyle = queue >= MAX_QUEUE ? "#ff6b6b" : queue > MAX_QUEUE * 0.6 ? "#ffb454" : "#4dd4ac";
+      roundedRect(ctx, left + 12, top + boxH - 16, Math.max(4, barW * ratio), 6, 3);
+      ctx.fill();
+    }
+
+    if (module.level < MAX_LEVEL) {
+      ctx.fillStyle = "#8ea0c9";
+      ctx.font = "10px 'Segoe UI', sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("↑ " + upgradeCost(module), left + 12, top + boxH + 14);
+    }
+  }
+
+  function drawRecord(record, lane) {
+    var y = laneY(lane.id) + Math.sin(state.time * 6 + record.wobble) * 3;
+    ctx.beginPath();
+    ctx.fillStyle = record.dirty ? "#ff6b6b" : "#4dd4ac";
+    ctx.shadowColor = record.dirty ? "rgba(255,107,107,.8)" : "rgba(77,212,172,.7)";
+    ctx.shadowBlur = 10;
+    ctx.arc(record.x, y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawSourceAndSink() {
+    for (var i = 0; i < state.lanes.length; i++) {
+      var y = laneY(i);
+      ctx.fillStyle = "#121a33";
+      ctx.strokeStyle = "rgba(35,48,90,1)";
+      ctx.lineWidth = 1.5;
+      roundedRect(ctx, 10, y - 22, 40, 44, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = state.selected === i ? "#4dd4ac" : "#8ea0c9";
+      ctx.font = "10px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("K" + (i + 1), 30, y + 4);
+
+      ctx.fillStyle = "#121a33";
+      roundedRect(ctx, W - 76, y - 22, 58, 44, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#8ea0c9";
+      ctx.fillText("DWH", W - 47, y + 4);
+    }
+  }
+
+  function drawWaveBar() {
+    var ratio = Math.min(1, state.waveTime / WAVE_SECONDS);
+    ctx.fillStyle = "rgba(255,255,255,.06)";
+    roundedRect(ctx, 10, 12, W - 20, 6, 3);
+    ctx.fill();
+    ctx.fillStyle = "#4dd4ac";
+    roundedRect(ctx, 10, 12, Math.max(4, (W - 20) * ratio), 6, 3);
+    ctx.fill();
+
+    ctx.fillStyle = "#8ea0c9";
+    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("волна " + state.wave + " из " + WAVES + " · поток " +
+      spawnRate().toFixed(1) + " записей/с на пайплайн · брак " +
+      fmtPercent(dirtyShare()), 12, 34);
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    drawWaveBar();
+    drawSourceAndSink();
+    for (var i = 0; i < state.lanes.length; i++) {
+      var lane = state.lanes[i];
+      drawTrack(lane);
+      for (var j = 0; j < lane.modules.length; j++) {
+        drawModule(lane.modules[j]);
+      }
+      for (var k = 0; k < lane.moving.length; k++) {
+        drawRecord(lane.moving[k], lane);
+      }
+      for (var m = 0; m < lane.modules.length; m++) {
+        var module = lane.modules[m];
+        for (var n = 0; n < module.queue.length; n++) {
+          var fake = { x: stationX(module.index) - 40 - n * 12, dirty: module.queue[n].dirty, wobble: 0 };
+          drawRecord(fake, lane);
+        }
+      }
+    }
+  }
+
+  function loop(timestamp) {
+    if (!lastFrame) lastFrame = timestamp;
+    var delta = Math.min(0.1, (timestamp - lastFrame) / 1000);
+    lastFrame = timestamp;
+
+    if (!state.paused) {
+      accumulator += delta;
+      while (accumulator >= STEP) {
+        step(STEP);
+        accumulator -= STEP;
+      }
+    }
+    render();
+    updateHud();
+    requestAnimationFrame(loop);
+  }
+
+  function canvasPoint(event) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (W / rect.width),
+      y: (event.clientY - rect.top) * (H / rect.height)
+    };
+  }
+
+  canvas.addEventListener("click", function (event) {
+    if (state.phase !== "running") return;
+    var point = canvasPoint(event);
+    for (var i = 0; i < state.lanes.length; i++) {
+      for (var j = 0; j < state.lanes[i].modules.length; j++) {
+        var module = state.lanes[i].modules[j];
+        var dx = Math.abs(point.x - stationX(module.index));
+        var dy = Math.abs(point.y - laneY(i));
+        if (dx <= 66 && dy <= 32) {
+          state.selected = i;
+          upgradeModule(module);
+          return;
+        }
+      }
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === " ") {
+      event.preventDefault();
+      togglePause();
+    } else if (event.key === "r" || event.key === "R") {
+      resetGame();
+    } else if (event.key === "u" || event.key === "U") {
+      upgradeSelected();
+    } else if (["1", "2", "3"].indexOf(event.key) !== -1) {
+      state.selected = Number(event.key) - 1;
+    }
+  });
+
+  function togglePause() {
+    if (state.phase !== "running") return;
+    state.paused = !state.paused;
+    document.getElementById("btn-pause").textContent = state.paused ? "Продолжить" : "Пауза";
+  }
+
+  document.getElementById("btn-pause").addEventListener("click", function () {
+    if (state.phase === "ready" || state.phase === "won" || state.phase === "lost") {
+      startRun();
+      return;
+    }
+    togglePause();
+  });
+
+  document.getElementById("btn-restart").addEventListener("click", function () {
+    resetGame();
+  });
+
+  document.getElementById("btn-upgrade").addEventListener("click", function () {
+    state.selected = bottleneckLane();
+    upgradeSelected();
+  });
+
+  overlayBtn.addEventListener("click", function () {
+    if (state.phase === "ready") {
+      startRun();
+    } else {
+      resetGame();
+      startRun();
+    }
+  });
+
+  resetGame();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

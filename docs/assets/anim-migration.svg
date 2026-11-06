@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="Миграция DWH: сверка бакетов по подписям, drill-down по ключам и колонкам">
+  <style>
+    .bg   { fill: #0b1020; }
+    .box  { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t    { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s    { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .b    { fill: #22305c; }
+    .eq   { fill: #2f6f5f; animation: ok 3.2s ease-in-out infinite; }
+    .ne   { fill: #ff6b6b; animation: nok 3.2s ease-in-out infinite; }
+    .e2   { animation-delay: .2s; }
+    .e3   { animation-delay: .4s; }
+    .e4   { animation-delay: .6s; }
+    .wire { fill: none; stroke: #24305a; stroke-width: 3; stroke-dasharray: 5 9; animation: dash 1.4s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -28; } }
+    @keyframes ok { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+    @keyframes nok { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .eq, .ne, .wire { animation: none; } }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <rect class="box" x="24" y="24" width="250" height="120" rx="10"/>
+  <text class="t" x="40" y="46">legacy DWH</text>
+  <text class="s" x="40" y="62">Postgres · hashtext(key) % 32</text>
+  <rect class="eq" x="40" y="74" width="60" height="18" rx="4"/>
+  <rect class="eq e2" x="108" y="74" width="60" height="18" rx="4"/>
+  <rect class="ne" x="176" y="74" width="60" height="18" rx="4"/>
+  <rect class="eq e3" x="40" y="100" width="60" height="18" rx="4"/>
+  <rect class="eq e4" x="108" y="100" width="60" height="18" rx="4"/>
+  <rect class="eq e2" x="176" y="100" width="60" height="18" rx="4"/>
+  <text class="s" x="40" y="136">count · count(distinct fp) · min/max fp</text>
+
+  <rect class="box" x="546" y="24" width="250" height="120" rx="10"/>
+  <text class="t" x="562" y="46">новый DWH</text>
+  <text class="s" x="562" y="62">ClickHouse · cityHash64(key) % 32</text>
+  <rect class="eq" x="562" y="74" width="60" height="18" rx="4"/>
+  <rect class="eq e2" x="630" y="74" width="60" height="18" rx="4"/>
+  <rect class="ne" x="698" y="74" width="60" height="18" rx="4"/>
+  <rect class="eq e3" x="562" y="100" width="60" height="18" rx="4"/>
+  <rect class="eq e4" x="630" y="100" width="60" height="18" rx="4"/>
+  <rect class="eq e2" x="698" y="100" width="60" height="18" rx="4"/>
+  <text class="s" x="562" y="136">подпись бакета сходится — строки не читаем</text>
+
+  <path class="wire" d="M274 108 C 380 108, 420 108, 546 108"/>
+
+  <rect class="box" x="290" y="150" width="240" height="54" rx="10"/>
+  <text class="t" x="410" y="172" text-anchor="middle">расходящийся бакет</text>
+  <text class="s" x="410" y="190" text-anchor="middle">(key, fp) → missing / extra / changed</text>
+
+  <rect class="box" x="546" y="150" width="250" height="54" rx="10"/>
+  <text class="t" x="671" y="172" text-anchor="middle">diff по колонкам</text>
+  <text class="s" x="671" y="190" text-anchor="middle">1e-6 допуск · ignore для _loaded_at</text>
+</svg>

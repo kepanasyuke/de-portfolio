@@ -1,0 +1,85 @@
+rules:
+  - name: orders_pk_unique
+    type: unique
+    table: dds.orders
+    column: order_id
+    description: бизнес-ключ заказа не должен дублироваться после merge
+
+  - name: orders_customer_not_null
+    type: not_null
+    table: dds.orders
+    column: customer_id
+
+  - name: orders_status_accepted
+    type: accepted_values
+    table: dds.orders
+    column: status
+    values: [created, paid, cancelled, refunded]
+
+  - name: orders_customer_fk
+    type: referential_integrity
+    table: dds.orders
+    column: customer_id
+    ref_table: dds.customers
+    ref_column: customer_id
+    description: сиротские заказы ловим до сборки витрин
+
+  - name: order_items_qty_positive
+    type: range
+    table: dds.order_items
+    column: quantity
+    min_value: 1
+    max_value: 1000
+
+  - name: order_items_line_unique
+    type: unique
+    table: dds.order_items
+    columns: [order_id, order_item_id]
+
+  - name: payments_amount_non_negative
+    type: range
+    table: dds.payments
+    column: amount
+    min_value: 0
+    severity: warn
+
+  - name: dim_customer_single_current
+    type: unique
+    table: dm.dim_customer
+    column: customer_id
+    where: is_current
+    description: в SCD2-измерении ровно одна актуальная версия клиента
+
+  - name: fact_sales_customer_dim_fk
+    type: referential_integrity
+    table: dm.fact_sales
+    column: customer_key
+    ref_table: dm.dim_customer
+    ref_column: customer_key
+
+  - name: fact_sales_product_dim_fk
+    type: referential_integrity
+    table: dm.fact_sales
+    column: product_key
+    ref_table: dm.dim_product
+    ref_column: product_key
+
+  - name: fact_sales_row_count
+    type: row_count
+    table: dm.fact_sales
+    min_value: 1
+    description: пустая витрина после ночного прогона — инцидент
+
+  - name: fact_sales_freshness
+    type: freshness
+    table: dm.fact_sales
+    column: _loaded_at
+    max_lag: 26 hours
+
+  - name: dim_date_coverage
+    type: expression
+    table: dm.dim_date
+    sql: |
+      SELECT count(*) FILTER (WHERE is_weekend IS NULL) AS failed_rows,
+             count(*) AS checked_rows
+      FROM src

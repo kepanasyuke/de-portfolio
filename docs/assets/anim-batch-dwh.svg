@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" width="820" height="220" role="img" aria-label="Батч-DWH: landing → bronze → staging → DDS → DM, карантин в стороне">
+  <style>
+    .bg  { fill: #0b1020; }
+    .lyr { fill: #182245; stroke: #23305a; stroke-width: 1.5; }
+    .t   { fill: #e8eefc; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+    .s   { fill: #8ea0c9; font: 10px 'Segoe UI', Arial, sans-serif; }
+    .wire { fill: none; stroke: #24305a; stroke-width: 6; stroke-linecap: round; }
+    .flow { fill: none; stroke: #4dd4ac; stroke-width: 2; stroke-dasharray: 6 12; animation: dash 1.2s linear infinite; }
+    .part { fill: #22305c; stroke: #2f4076; stroke-width: 1; animation: partIn 3.6s ease-in-out infinite; }
+    .p2   { animation-delay: .6s; }
+    .p3   { animation-delay: 1.2s; }
+    .q    { fill: #ff6b6b; animation: qOut 3.6s ease-in-out infinite; }
+    .pk   { fill: #4dd4ac; animation: hop 2.4s linear infinite; }
+    .pk-b { animation-delay: 1.2s; }
+    @keyframes dash { to { stroke-dashoffset: -36; } }
+    @keyframes partIn { 0%, 100% { opacity: .25; } 45%, 70% { opacity: 1; } }
+    @keyframes qOut { 0%, 40% { opacity: .2; transform: translateY(0); } 60%, 100% { opacity: 1; transform: translateY(16px); } }
+    @keyframes hop { 0% { transform: translate(0, 0); } 100% { transform: translate(600px, 0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .flow, .part, .q, .pk { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="820" height="220" rx="16"/>
+
+  <rect class="lyr" x="24" y="34" width="150" height="66" rx="10"/>
+  <text class="t" x="99" y="60" text-anchor="middle">landing</text>
+  <text class="s" x="99" y="78" text-anchor="middle">CSV выгрузка</text>
+
+  <rect class="lyr" x="212" y="34" width="150" height="66" rx="10"/>
+  <text class="t" x="287" y="60" text-anchor="middle">bronze</text>
+  <text class="s" x="287" y="78" text-anchor="middle">parquet · текст</text>
+
+  <rect class="lyr" x="400" y="34" width="150" height="66" rx="10"/>
+  <text class="t" x="475" y="60" text-anchor="middle">staging</text>
+  <text class="s" x="475" y="78" text-anchor="middle">try_cast · dedup</text>
+
+  <rect class="lyr" x="588" y="34" width="140" height="66" rx="10"/>
+  <text class="t" x="658" y="60" text-anchor="middle">DDS → DM</text>
+  <text class="s" x="658" y="78" text-anchor="middle">upsert · SCD2</text>
+
+  <line class="wire" x1="174" y1="67" x2="212" y2="67"/>
+  <line class="wire" x1="362" y1="67" x2="400" y2="67"/>
+  <line class="wire" x1="550" y1="67" x2="588" y2="67"/>
+  <line class="flow" x1="174" y1="67" x2="212" y2="67"/>
+  <line class="flow" x1="362" y1="67" x2="400" y2="67"/>
+  <line class="flow" x1="550" y1="67" x2="588" y2="67"/>
+
+  <circle class="pk" cx="180" cy="67" r="4"/>
+  <circle class="pk pk-b" cx="180" cy="72" r="3.5"/>
+
+  <rect class="lyr" x="212" y="130" width="516" height="56" rx="10"/>
+  <text class="s" x="228" y="150">партиции load_date=YYYY-MM-DD · перезапись только своей партиции</text>
+  <rect class="part" x="228" y="158" width="90" height="16" rx="4"/>
+  <rect class="part p2" x="330" y="158" width="90" height="16" rx="4"/>
+  <rect class="part p3" x="432" y="158" width="90" height="16" rx="4"/>
+  <rect class="part" x="534" y="158" width="90" height="16" rx="4"/>
+
+  <rect class="lyr" x="24" y="130" width="164" height="56" rx="10"/>
+  <text class="t" x="106" y="152" text-anchor="middle">quarantine</text>
+  <text class="s" x="106" y="170" text-anchor="middle">_dq_errors[]</text>
+  <circle class="q" cx="70" cy="140" r="4"/>
+
+  <text class="s" x="24" y="206">каждая строка с нарушением контракта уходит в карантин, а не в DWH</text>
+</svg>

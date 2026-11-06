@@ -1,0 +1,32 @@
+{
+  "tables": [
+    {
+      "name": "dds.orders",
+      "key": ["order_id"],
+      "columns": [
+        "order_id",
+        "customer_id",
+        "status",
+        "currency",
+        "total_amount",
+        "created_at"
+      ],
+      "where": "created_at >= '2026-01-01'",
+      "ignore": []
+    },
+    {
+      "name": "dm.fact_sales",
+      "key": ["order_item_id"],
+      "columns": [
+        "order_item_id",
+        "order_id",
+        "date_key",
+        "customer_key",
+        "product_key",
+        "quantity",
+        "net_amount"
+      ],
+      "ignore": ["_loaded_at"]
+    }
+  ]
+}

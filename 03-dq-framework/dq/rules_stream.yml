@@ -1,0 +1,45 @@
+rules:
+  - name: order_events_pk_unique
+    type: unique
+    table: dds.order_events
+    column: event_id
+    description: дедупликация по event_id — exactly-once на уровне бизнес-ключа
+
+  - name: order_events_type_accepted
+    type: accepted_values
+    table: dds.order_events
+    column: event_type
+    values: [order_created, order_paid, order_cancelled, order_refunded]
+
+  - name: order_events_order_fk
+    type: referential_integrity
+    table: dds.order_events
+    column: order_id
+    ref_table: dds.orders
+    ref_column: order_id
+    description: события без заказа уходят в карантин, а не в DWH
+
+  - name: order_events_amount_non_negative
+    type: range
+    table: dds.order_events
+    column: amount
+    min_value: 0
+    severity: warn
+
+  - name: order_events_freshness
+    type: freshness
+    table: dds.order_events
+    column: occurred_at
+    max_lag: 30 minutes
+    severity: warn
+    description: лаг стрима больше 30 минут — смотрим consumer lag и чекпоинты
+
+  - name: order_events_quarantine_ratio
+    type: expression
+    table: dds.order_events
+    severity: warn
+    sql: |
+      SELECT count(*) FILTER (WHERE is_quarantined) AS failed_rows,
+             count(*) AS checked_rows
+      FROM src
+    description: доля карантина выше 2% сигнализирует о поломке контракта источника

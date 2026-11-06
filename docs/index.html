@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Портфолио Data Engineer · 6 проектов</title>
+<style>
+  :root {
+    --bg: #070b18;
+    --panel: #101830;
+    --panel-2: #131d3a;
+    --ink: #e8eefc;
+    --muted: #8ea0c9;
+    --accent: #4dd4ac;
+    --warn: #ffb454;
+    --line: #22305a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1400px 700px at 12% -12%, #1a2a55 0%, transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, #123b34 0%, transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .page { width: min(1120px, 100%); margin: 0 auto; padding: 48px 20px 80px; }
+
+  header.hero { margin-bottom: 40px; }
+  .eyebrow {
+    display: inline-block;
+    color: var(--accent);
+    border: 1px solid rgba(77, 212, 172, .35);
+    background: rgba(77, 212, 172, .08);
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: 12px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+  }
+  h1 { font-size: clamp(26px, 4vw, 42px); line-height: 1.15; margin: 16px 0 12px; letter-spacing: -.5px; }
+  .lead { color: var(--muted); max-width: 760px; margin: 0 0 24px; font-size: 17px; }
+  .hero-anim {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+  .chip {
+    font-size: 12.5px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 4px 10px;
+  }
+
+  h2.section { font-size: 20px; margin: 56px 0 6px; letter-spacing: .2px; }
+  .section-note { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+
+  .grid { display: grid; gap: 22px; }
+  @media (min-width: 900px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    transition: transform .18s ease, border-color .18s ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: rgba(77, 212, 172, .45); }
+  .card .anim { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); background: #0b1020; }
+  .card .body { padding: 20px 22px 24px; }
+  .card .num {
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+  }
+  .card h3 { margin: 6px 0 8px; font-size: 19px; }
+  .card p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
+  .card ul { margin: 0 0 16px; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .card ul li { margin-bottom: 6px; }
+  .card ul li b { color: var(--ink); font-weight: 600; }
+  .links { display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a {
+    font-size: 13.5px;
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    background: #182245;
+    border-radius: 9px;
+    padding: 6px 12px;
+  }
+  .links a:hover { border-color: var(--accent); color: var(--accent); }
+  .links a.primary { background: var(--accent); color: #06251d; border-color: transparent; font-weight: 600; }
+  .links a.primary:hover { color: #06251d; filter: brightness(1.06); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .7px; background: #0f1730; }
+  tr:last-child td { border-bottom: none; }
+  td code, p code, li code {
+    background: #182245;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 12.5px;
+    font-family: Consolas, "Cascadia Mono", monospace;
+  }
+
+  .game-banner {
+    margin-top: 22px;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: 1fr;
+    align-items: center;
+    background: linear-gradient(120deg, rgba(77, 212, 172, .12), rgba(24, 34, 69, .6));
+    border: 1px solid rgba(77, 212, 172, .3);
+    border-radius: 18px;
+    padding: 22px;
+  }
+  @media (min-width: 900px) { .game-banner { grid-template-columns: 1.2fr 1fr; } }
+  .game-banner h3 { margin: 0 0 8px; font-size: 20px; }
+  .game-banner p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
+  .game-banner img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); }
+
+  footer { margin-top: 64px; color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 20px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <span class="eyebrow">Data Engineer · портфолио</span>
+    <h1>Шесть проектов на одном стеке: Airflow, Spark, Kafka, DWH, Data Quality</h1>
+    <p class="lead">
+      Не набор скриншотов, а работающий код: ночной батч в DDS и DM со SCD2,
+      стриминг из Kafka с дедупликацией, декларативный DQ-движок с метриками,
+      витрины ClickHouse с измеренным бенчмарком, реконсиляция при миграции DWH
+      и игра про backpressure. Каждый проект можно открыть, прочитать и запустить.
+    </p>
+    <img class="hero-anim" src="assets/anim-hero.svg" alt="Схема пайплайна: landing, Spark, DDS, DM, витрины и DQ-гейт">
+    <div class="chips">
+      <span class="chip">Python 3.10+</span>
+      <span class="chip">Apache Airflow 2.9</span>
+      <span class="chip">PySpark 3.5</span>
+      <span class="chip">Kafka 3.7</span>
+      <span class="chip">PostgreSQL</span>
+      <span class="chip">ClickHouse</span>
+      <span class="chip">Prometheus + Grafana</span>
+      <span class="chip">pytest</span>
+    </div>
+  </header>
+
+  <h2 class="section">Проекты</h2>
+  <p class="section-note">У каждого — своя фича, свой акцент и своя анимация схемы.</p>
+
+  <div class="grid two">
+
+    <article class="card">
+      <img class="anim" src="assets/anim-batch-dwh.svg" alt="Батч-DWH: landing, bronze, staging, DDS, DM и карантин">
+      <div class="body">
+        <div class="num">01 · Batch DWH</div>
+        <h3>Landing → bronze → DDS → DM</h3>
+        <p>Ночной пайплайн: сырая выгрузка в озеро, типизация через <code>try_cast</code>,
+           карантин плохих строк, upsert в 3NF и звезда Кимбалла с SCD2.</p>
+        <ul>
+          <li><b>Идемпотентность</b> на всех слоях: перезапуск за ту же дату даёт то же состояние</li>
+          <li><b>Карантин</b> вместо падения джобы: контракт источника видно по метрике</li>
+          <li><b>SCD2</b> под защитой частичного уникального индекса</li>
+          <li><b>SMART</b> окно в факте: правки приезжают, история не переписывается</li>
+        </ul>
+        <div class="links">
+          <a href="../01-batch-dwh/README.md">README</a>
+          <a href="../01-batch-dwh/sql/02_merge_orders.sql">SQL merge</a>
+          <a href="../dags/orders_batch_dag.py">DAG</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <img class="anim" src="assets/anim-streaming.svg" alt="Стриминг: Kafka, Spark Structured Streaming, озеро и DDS">
+      <div class="body">
+        <div class="num">02 · Streaming</div>
+        <h3>Kafka → Spark Structured Streaming</h3>
+        <p>Жизненный цикл заказа как поток событий: партиционирование по <code>order_id</code>,
+           watermark, дедупликация в два слоя и компакция в DDS каждые 15 минут.</p>
+        <ul>
+          <li><b>Exactly-once</b> на практике: чекпоинты + PK в DWH</li>
+          <li><b>Валидация переходов</b> там, где видна вся история заказа — в DWH</li>
+          <li><b>Деньги в Decimal</b>, ни одного float в модели события</li>
+          <li><b>Один код</b> для стрима и backfill через <code>availableNow</code></li>
+        </ul>
+        <div class="links">
+          <a href="../02-streaming-kafka/README.md">README</a>
+          <a href="../02-streaming-kafka/events/model.py">Контракт</a>
+          <a href="../02-streaming-kafka/sql/07_merge_events.sql">Merge</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <img class="anim" src="assets/anim-dq.svg" alt="Data quality: правила, SQL, подсветка нарушений, гейт и Grafana">
+      <div class="body">
+        <div class="num">03 · Data Quality</div>
+        <h3>YAML-правила → SQL → гейт и метрики</h3>
+        <p>Свой движок проверок: правило компилируется в один <code>SELECT</code> с двумя
+           колонками-счётчиками, результат идёт в <code>meta.dq_result</code>, оттуда — в Prometheus.</p>
+        <ul>
+          <li>8 типов проверок, включая <code>freshness</code> и произвольный <code>expression</code></li>
+          <li><b>Безопасность</b>: валидация идентификаторов, запрет <code>;</code> и комментариев</li>
+          <li><b>Гейт</b> настраивается по строгости: error / warn / none</li>
+          <li>Экспортёр метрик и готовый Grafana-дашборд</li>
+        </ul>
+        <div class="links">
+          <a href="../03-dq-framework/README.md">README</a>
+          <a href="../03-dq-framework/dq/checks.py">checks.py</a>
+          <a href="../03-dq-framework/dq/rules.yml">rules.yml</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <img class="anim" src="assets/anim-clickhouse.svg" alt="ClickHouse: колоночное чтение, март и сравнение стоимости запросов">
+      <div class="body">
+        <div class="num">04 · ClickHouse</div>
+        <h3>Витрины и измеренный бенчмарк</h3>
+        <p>Колоночная модель поверх того же факта: <code>ReplacingMergeTree</code>,
+           пред-агрегат на <code>AggregatingMergeTree</code> и скрипт, который мерит
+           каждое решение вместо пересказа туториалов.</p>
+        <ul>
+          <li><b>PREWHERE</b> vs WHERE, <code>uniqCombined</code> vs <code>uniqExact</code></li>
+          <li><b>FINAL</b> vs <code>argMax</code> — цена гарантии актуальности</li>
+          <li>Партиции по месяцу, <code>LowCardinality</code>, ZSTD</li>
+          <li>Медиана нескольких прогонов, серверное время</li>
+        </ul>
+        <div class="links">
+          <a href="../04-clickhouse-marts/README.md">README</a>
+          <a href="../04-clickhouse-marts/sql/01_schema.sql">DDL</a>
+          <a href="../04-clickhouse-marts/bench/benchmark.py">Бенчмарк</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <img class="anim" src="assets/anim-migration.svg" alt="Миграция: сверка бакетов, drill-down по ключам и колонкам">
+      <div class="body">
+        <div class="num">05 · Миграция</div>
+        <h3>Реконсиляция старого и нового DWH</h3>
+        <p>Как доказать, что миграция не потеряла данные, не вычитывая миллиарды строк:
+           подпись по бакетам, diff по ключам, diff по колонкам — и exit-код как
+           cutover-гейт.</p>
+        <ul>
+          <li><b>Бакеты</b> по <code>hashtext</code>/<code>cityHash64</code>: агрегат вместо полного чтения</li>
+          <li><b>Канонизация</b>: 199.90 = 199.9, пустая строка = NULL, naive = UTC</li>
+          <li>Допуск 1e-6 для чисел, <code>ignore</code> для технических колонок</li>
+          <li>Чек-лист cutover: T-10 → T0 → T+1 → T+7</li>
+        </ul>
+        <div class="links">
+          <a href="../05-migration-parity/README.md">README</a>
+          <a href="../05-migration-parity/parity/compare.py">Движок</a>
+          <a href="../05-migration-parity/docs/cutover-checklist.md">Чек-лист</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <img class="anim" src="assets/anim-game.svg" alt="Игра: три пайплайна, очереди, карантин">
+      <div class="body">
+        <div class="num">06 · Игра</div>
+        <h3>«Пайплайн: ночной релиз»</h3>
+        <p>Аркада про то же, о чём остальные пять проектов: поток растёт, часть записей
+           грязная, очередь упирается в ёмкость модуля. Три пайплайна, шесть волн,
+           бюджет на апгрейды.</p>
+        <ul>
+          <li><b>Backpressure</b> видно глазами: очередь &gt; 10 → таймауты и падение SLO</li>
+          <li><b>Два компромисса</b>: ёмкость против точности, скорость против качества</li>
+          <li><b>Карантин не снижает SLO</b> — игра наказывает за протечку в DWH</li>
+          <li>Один HTML-файл, canvas, фиксированный шаг 1/60 с</li>
+        </ul>
+        <div class="links">
+          <a class="primary" href="../06-pipeline-game/index.html">Играть</a>
+          <a href="../06-pipeline-game/README.md">README</a>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <h2 class="section">Как проекты закрывают требования вакансии</h2>
+  <p class="section-note">Таблица специально скучная: напротив каждого требования — конкретный файл, который можно открыть.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Требование</th><th>Где подтверждено</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Python 3–4 года, поддерживаемый и документированный код</td>
+          <td>Все проекты: типизация, docstring-и с «почему», тесты без БД</td>
+        </tr>
+        <tr>
+          <td>Глубокий SQL, промышленные СУБД</td>
+          <td><code>01-batch-dwh/sql/*.sql</code>: upsert, SCD2, оконные функции, частичные индексы</td>
+        </tr>
+        <tr>
+          <td>Production data pipelines</td>
+          <td><code>dags/orders_batch_dag.py</code>, <code>dags/order_events_compaction_dag.py</code>, идемпотентность и ретраи</td>
+        </tr>
+        <tr>
+          <td>Apache Airflow</td>
+          <td>Два DAG, кастомный S3-сенсор с <code>mode="reschedule"</code>, гейт как задача</td>
+        </tr>
+        <tr>
+          <td>Spark / PySpark, Kafka</td>
+          <td><code>01-batch-dwh/spark/jobs/*</code>, <code>02-streaming-kafka/jobs/*</code>, Structured Streaming с watermark</td>
+        </tr>
+        <tr>
+          <td>DWH: слои DDS, DM, моделирование</td>
+          <td>3NF в <code>dds</code>, звезда Кимбалла в <code>dm</code>, SCD2, суррогатные ключи</td>
+        </tr>
+        <tr>
+          <td>Надёжность: мониторинг, отладка, оптимизация</td>
+          <td>DQ-гейт, Prometheus-экспортёр, Grafana-дашборд, бенчмарк ClickHouse</td>
+        </tr>
+        <tr>
+          <td>Миграции ETL/DWH (плюс)</td>
+          <td><code>05-migration-parity</code> + чек-лист cutover</td>
+        </tr>
+        <tr>
+          <td>Data Quality и контроль целостности</td>
+          <td><code>03-dq-framework</code>: правила, карантин, метрики, история прогонов</td>
+        </tr>
+        <tr>
+          <td>Hadoop/Hive, Parquet, S3 (плюс)</td>
+          <td><code>01-batch-dwh/spark/common/session.py</code>: s3a, партиционирование, snappy</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="game-banner">
+    <div>
+      <h3>Хочешь сразу поиграть?</h3>
+      <p>Игра открывается локально, без сборки и сервера: один HTML-файл.
+         Полезно, чтобы за две минуты объяснить, что такое backpressure и почему
+         «добавим ретраев» не лечит очередь.</p>
+      <div class="links">
+        <a class="primary" href="../06-pipeline-game/index.html">Открыть игру</a>
+        <a href="../README.md">Корневой README</a>
+      </div>
+    </div>
+    <img src="assets/anim-game.svg" alt="Анимация игрового поля">
+  </div>
+
+  <footer>
+    Все цифры и схемы в проектах — из кода, который лежит рядом. Бенчмарк ClickHouse
+    намеренно не содержит зашитых результатов: их надо получить у себя командой
+    <code>python 04-clickhouse-marts/bench/benchmark.py --rows 2000000</code>.
+  </footer>
+
+</div>
+</body>
+</html>
