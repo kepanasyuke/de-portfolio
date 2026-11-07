@@ -10,9 +10,10 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 LATEST_SQL = """
 SELECT DISTINCT ON (rule_name)
@@ -102,20 +103,29 @@ def fetch_rows() -> list[dict[str, Any]]:
     dsn = os.environ.get("DWH_DSN")
     if not dsn:
         raise RuntimeError("DWH_DSN is not set")
-    with psycopg.connect(dsn, row_factory=dict_row) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(LATEST_SQL)
-            return list(cursor.fetchall())
+    with psycopg.connect(dsn, row_factory=dict_row) as connection, connection.cursor() as cursor:
+        cursor.execute(LATEST_SQL)
+        rows = list(cursor.fetchall())
+    return rows
 
 
 def collect(force: bool = False) -> str:
     """Return the metrics body, refreshing from the database at most once per TTL."""
     now = time.monotonic()
-    if not force and _cache["body"] and now - _cache["at"] < CACHE_TTL_SECONDS:
-        return _cache["body"]
-    body = render_metrics(fetch_rows())
-    _cache.update({"at": now, "body": body})
+    cached = _cache["body"]
+    if not force and cached and now - _cache["at"] < CACHE_TTL_SECONDS:
+        body = cached
+    else:
+        body = render_metrics(fetch_rows())
+        _cache.update({"at": now, "body": body})
     return body
+
+
+FAILED_SCRAPE_BODY = (
+    "# HELP dq_exporter_up 1 when the last scrape succeeded\n"
+    "# TYPE dq_exporter_up gauge\n"
+    "dq_exporter_up 0\n"
+)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -124,20 +134,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib naming
         if self.path.startswith("/healthz"):
             self._respond(200, "ok\n", "text/plain; charset=utf-8")
-            return
-        if not self.path.startswith("/metrics"):
+        elif self.path.startswith("/metrics"):
+            self._respond(200, self._metrics_body(), "text/plain; version=0.0.4; charset=utf-8")
+        else:
             self._respond(404, "not found\n", "text/plain; charset=utf-8")
-            return
+
+    def _metrics_body(self) -> str:
+        """Never fail a scrape: a broken database becomes ``dq_exporter_up 0``."""
         try:
             body = collect()
         except Exception as error:  # noqa: BLE001
             print(f"scrape failed: {error}", file=sys.stderr)
-            body = (
-                "# HELP dq_exporter_up 1 when the last scrape succeeded\n"
-                "# TYPE dq_exporter_up gauge\n"
-                "dq_exporter_up 0\n"
-            )
-        self._respond(200, body, "text/plain; version=0.0.4; charset=utf-8")
+            body = FAILED_SCRAPE_BODY
+        return body
 
     def _respond(self, status: int, body: str, content_type: str) -> None:
         payload = body.encode("utf-8")

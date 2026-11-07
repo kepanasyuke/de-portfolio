@@ -15,7 +15,6 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
-
 from common.commands import dq_command, spark_submit
 from common.settings import DEFAULT_ARGS, DQ_RULES_DIR, DWH_CONN_ID, SQL_DIR, STREAM_JOBS_DIR
 

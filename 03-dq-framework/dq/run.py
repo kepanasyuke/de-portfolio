@@ -15,15 +15,16 @@ import os
 import sys
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .checks import (
+    STATUSES,
     Result,
     Rule,
     RuleError,
-    STATUSES,
     build_sql,
     evaluate,
     gate,
@@ -67,12 +68,8 @@ ON CONFLICT (run_id, rule_name) DO UPDATE SET
 """
 
 
-def build_dsn(explicit: str | None) -> str:
-    """Resolve a libpq DSN from the CLI flag, DWH_DSN or discrete PG* variables."""
-    if explicit:
-        return explicit
-    if os.environ.get("DWH_DSN"):
-        return os.environ["DWH_DSN"]
+def _dsn_from_pg_variables() -> str:
+    """Build a libpq DSN from the discrete PG* variables."""
     required = ("PGHOST", "PGDATABASE", "PGUSER")
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -90,6 +87,42 @@ def build_dsn(explicit: str | None) -> str:
     return " ".join(parts)
 
 
+def build_dsn(explicit: str | None) -> str:
+    """Resolve a libpq DSN from the CLI flag, DWH_DSN or discrete PG* variables."""
+    if explicit:
+        dsn = explicit
+    elif os.environ.get("DWH_DSN"):
+        dsn = os.environ["DWH_DSN"]
+    else:
+        dsn = _dsn_from_pg_variables()
+    return dsn
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+def _failed_result(rule: Rule, started: float, message: str) -> Result:
+    """A verdict for a rule that could not be evaluated."""
+    return Result(
+        rule=rule,
+        failed_rows=0,
+        checked_rows=0,
+        status="failed",
+        duration_ms=_elapsed_ms(started),
+        message=message,
+    )
+
+
+def _result_from_row(rule: Rule, started: float, row: Sequence[Any] | None) -> Result:
+    """Turn the engine's counters into a verdict, or fail loudly but locally."""
+    if row is None or len(row) < 2:
+        result = _failed_result(rule, started, "rule SQL returned no counters")
+    else:
+        result = evaluate(rule, int(row[0]), int(row[1]), _elapsed_ms(started))
+    return result
+
+
 def execute_rule(connection: Any, rule: Rule) -> Result:
     """Run one compiled rule, converting engine errors into a failed verdict."""
     sql = build_sql(rule)
@@ -100,26 +133,10 @@ def execute_rule(connection: Any, rule: Rule) -> Result:
             row = cursor.fetchone()
     except Exception as error:  # noqa: BLE001 - any engine error is a data incident
         connection.rollback()
-        duration_ms = int((time.perf_counter() - started) * 1000)
-        return Result(
-            rule=rule,
-            failed_rows=0,
-            checked_rows=0,
-            status="failed",
-            duration_ms=duration_ms,
-            message=f"execution error: {type(error).__name__}: {error}",
-        )
-    duration_ms = int((time.perf_counter() - started) * 1000)
-    if row is None or len(row) < 2:
-        return Result(
-            rule=rule,
-            failed_rows=0,
-            checked_rows=0,
-            status="failed",
-            duration_ms=duration_ms,
-            message="rule SQL returned no counters",
-        )
-    return evaluate(rule, int(row[0]), int(row[1]), duration_ms)
+        result = _failed_result(rule, started, f"execution error: {type(error).__name__}: {error}")
+    else:
+        result = _result_from_row(rule, started, row)
+    return result
 
 
 def persist(connection: Any, run_id: str, results: Sequence[Result]) -> None:
@@ -180,72 +197,116 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _select_rules(rules: Sequence[Rule], pattern: str | None) -> list[Rule]:
+    """Apply the ``--filter`` substring to rule names."""
+    return [rule for rule in rules if pattern in rule.name] if pattern else list(rules)
+
+
+def _print_sql(rules: Sequence[Rule]) -> None:
+    for rule in rules:
+        print(f"-- {rule.name} ({rule.type} on {rule.label})")
+        print(build_sql(rule) + ";\n")
+
+
+def _new_run_id() -> str:
+    return f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:6]}"
+
+
+def _collect(connection: Any, rules: Sequence[Rule]) -> list[Result]:
+    """Run every rule, reporting progress on stderr as we go."""
+    results: list[Result] = []
+    for rule in rules:
+        results.append(execute_rule(connection, rule))
+        print(f"[{results[-1].status:7}] {rule.name}", file=sys.stderr)
+    return results
+
+
+def _persist_safely(connection: Any, run_id: str, results: Sequence[Result]) -> None:
+    """Persisting verdicts must never hide the verdicts themselves."""
+    try:
+        persist(connection, run_id, results)
+    except Exception as error:  # noqa: BLE001
+        connection.rollback()
+        print(f"warning: results were not persisted: {error}", file=sys.stderr)
+
+
+def _write_report(
+    path: str, run_id: str, elapsed_ms: int, fail_on: str, results: Sequence[Result]
+) -> None:
+    report = {
+        "run_id": run_id,
+        "elapsed_ms": elapsed_ms,
+        "fail_on": fail_on,
+        "summary": summarize(results),
+        "results": [result.to_dict() for result in results],
+    }
+    Path(path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _run_rules(args: argparse.Namespace, rules: Sequence[Rule], connection: Any) -> int:
+    """Execute the rules, persist the verdicts and return the gate exit code."""
+    run_id = args.run_id or _new_run_id()
+    started = time.perf_counter()
+    try:
+        results = _collect(connection, rules)
+        if not args.no_persist:
+            _persist_safely(connection, run_id, results)
+    finally:
+        connection.close()
+
+    elapsed_ms = _elapsed_ms(started)
+    print(render(results))
+    print(f"run_id={run_id} elapsed_ms={elapsed_ms}")
+    if args.json_out:
+        _write_report(args.json_out, run_id, elapsed_ms, args.fail_on, results)
+    return 1 if gate(results, args.fail_on) else 0
+
+
+def _connect(dsn: str) -> Any:
+    import psycopg
+
+    return psycopg.connect(dsn)
+
+
+def _execute(args: argparse.Namespace, rules: Sequence[Rule]) -> int:
+    """Connect to the DWH and run the gate."""
+    try:
+        connection = _connect(build_dsn(args.dsn))
+    except ModuleNotFoundError:
+        print("psycopg is required: pip install 'psycopg[binary]'", file=sys.stderr)
+        code = 2
+    except Exception as error:  # noqa: BLE001
+        print(f"cannot connect to the DWH: {error}", file=sys.stderr)
+        code = 2
+    else:
+        code = _run_rules(args, rules, connection)
+    return code
+
+
+def _dispatch(args: argparse.Namespace, rules: list[Rule]) -> int:
+    """Pick between the dry-run, the SQL listing and the real gate."""
+    selected = _select_rules(rules, args.filter)
+    if not selected:
+        print("no rules selected", file=sys.stderr)
+        code = 2
+    elif args.show_sql:
+        _print_sql(selected)
+        code = 0
+    else:
+        code = _execute(args, selected)
+    return code
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         rules = load_rules(args.rules)
     except (RuleError, FileNotFoundError) as error:
         print(f"invalid rule set: {error}", file=sys.stderr)
-        return 2
-
-    if args.filter:
-        rules = [rule for rule in rules if args.filter in rule.name]
-    if not rules:
-        print("no rules selected", file=sys.stderr)
-        return 2
-
-    if args.show_sql:
-        for rule in rules:
-            print(f"-- {rule.name} ({rule.type} on {rule.label})")
-            print(build_sql(rule) + ";\n")
-        return 0
-
-    run_id = args.run_id or f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:6]}"
-
-    try:
-        import psycopg
-    except ModuleNotFoundError:
-        print("psycopg is required: pip install 'psycopg[binary]'", file=sys.stderr)
-        return 2
-
-    try:
-        connection = psycopg.connect(build_dsn(args.dsn))
-    except Exception as error:  # noqa: BLE001
-        print(f"cannot connect to the DWH: {error}", file=sys.stderr)
-        return 2
-
-    started = time.perf_counter()
-    results: list[Result] = []
-    try:
-        for rule in rules:
-            results.append(execute_rule(connection, rule))
-            print(f"[{results[-1].status:7}] {rule.name}", file=sys.stderr)
-        if not args.no_persist:
-            try:
-                persist(connection, run_id, results)
-            except Exception as error:  # noqa: BLE001
-                connection.rollback()
-                print(f"warning: results were not persisted: {error}", file=sys.stderr)
-    finally:
-        connection.close()
-
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
-    print(render(results))
-    print(f"run_id={run_id} elapsed_ms={elapsed_ms}")
-
-    if args.json_out:
-        report = {
-            "run_id": run_id,
-            "elapsed_ms": elapsed_ms,
-            "fail_on": args.fail_on,
-            "summary": summarize(results),
-            "results": [result.to_dict() for result in results],
-        }
-        Path(args.json_out).write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-
-    return 1 if gate(results, args.fail_on) else 0
+        code = 2
+    else:
+        code = _dispatch(args, rules)
+    return code
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ unit tests that run on a local Spark session.
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from pyspark.sql import Column, DataFrame, Window
 from pyspark.sql import functions as F

@@ -12,8 +12,8 @@ execution lives in ``parity.adapters`` and the orchestration in
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 FORBIDDEN = (";", "--", "/*", "*/", "'")
@@ -33,14 +33,15 @@ def identifier(value: str, field_name: str) -> str:
 
 
 def _filter(value: str | None, field_name: str) -> str | None:
+    """Validate the optional ``where`` fragment: no statement separators, no quotes."""
     if value is None:
-        return None
-    fragment = value.strip()
-    if not fragment:
-        return None
-    for token in FORBIDDEN:
-        if token in fragment:
-            raise SpecError(f"{field_name}: {token!r} is not allowed in a filter")
+        fragment = None
+    else:
+        stripped = value.strip()
+        forbidden = next((token for token in FORBIDDEN if token in stripped), None)
+        if forbidden is not None:
+            raise SpecError(f"{field_name}: {forbidden!r} is not allowed in a filter")
+        fragment = stripped or None
     return fragment
 
 
@@ -78,33 +79,59 @@ class TableSpec:
         return tuple(column for column in self.columns if column not in self.ignore)
 
     @classmethod
-    def from_mapping(cls, mapping: dict) -> "TableSpec":
-        try:
-            return cls(
-                name=mapping["name"],
-                key=tuple(mapping["key"]),
-                columns=tuple(mapping["columns"]),
-                where=mapping.get("where"),
-                ignore=tuple(mapping.get("ignore", ())),
-            )
-        except KeyError as error:
-            raise SpecError(f"table spec is missing {error.args[0]!r}") from error
+    def from_mapping(cls, mapping: dict) -> TableSpec:
+        missing = [name for name in ("name", "key", "columns") if name not in mapping]
+        if missing:
+            raise SpecError(f"table spec is missing {missing[0]!r} from {sorted(mapping)}")
+        return cls(
+            name=mapping["name"],
+            key=tuple(mapping["key"]),
+            columns=tuple(mapping["columns"]),
+            where=mapping.get("where"),
+            ignore=tuple(mapping.get("ignore", ())),
+        )
+
+
+CAST_TEMPLATES: dict[str, str] = {
+    "postgres": "coalesce(cast({column} as text), '{null}')",
+    "clickhouse": "coalesce(toString({column}), '{null}')",
+}
+
+CONCAT_SEPARATOR: dict[str, tuple[str, str]] = {
+    "postgres": ("concat_ws('|', ", ")"),
+    "clickhouse": ("concat(", ")"),
+}
+
+FINGERPRINT_TEMPLATES: dict[str, str] = {
+    "postgres": "md5({inner})",
+    "clickhouse": "lower(hex(MD5({inner})))",
+}
+
+BUCKET_TEMPLATES: dict[str, str] = {
+    "postgres": "abs(hashtext({key})) % {buckets}",
+    "clickhouse": "cityHash64({key}) % {buckets}",
+}
+
+
+def _template(templates: dict[str, str], dialect: str) -> str:
+    template = templates.get(dialect)
+    if template is None:
+        raise SpecError(f"unknown dialect {dialect!r}")
+    return template
 
 
 def _cast_text(column: str, dialect: str) -> str:
-    if dialect == "postgres":
-        return f"coalesce(cast({column} as text), '{NULL_TOKEN}')"
-    if dialect == "clickhouse":
-        return f"coalesce(toString({column}), '{NULL_TOKEN}')"
-    raise SpecError(f"unknown dialect {dialect!r}")
+    """Per-dialect cast to text with an explicit NULL sentinel."""
+    return _template(CAST_TEMPLATES, dialect).format(column=column, null=NULL_TOKEN)
 
 
 def _concat(parts: Sequence[str], dialect: str) -> str:
-    if dialect == "postgres":
-        return "concat_ws('|', " + ", ".join(parts) + ")"
-    if dialect == "clickhouse":
-        return "concat(" + ", '|', ".join(parts) + ")"
-    raise SpecError(f"unknown dialect {dialect!r}")
+    """Join parts with a separator that never appears inside a value."""
+    opening, closing = CONCAT_SEPARATOR.get(dialect, ("", ""))
+    if not opening:
+        raise SpecError(f"unknown dialect {dialect!r}")
+    separator = ", '|', " if dialect == "clickhouse" else ", "
+    return opening + separator.join(parts) + closing
 
 
 def key_expression(spec: TableSpec, dialect: str) -> str:
@@ -115,11 +142,7 @@ def key_expression(spec: TableSpec, dialect: str) -> str:
 def fingerprint_expression(spec: TableSpec, dialect: str) -> str:
     """MD5 over the canonical concatenation of every compared column."""
     inner = _concat([_cast_text(column, dialect) for column in spec.compared_columns], dialect)
-    if dialect == "postgres":
-        return f"md5({inner})"
-    if dialect == "clickhouse":
-        return f"lower(hex(MD5({inner})))"
-    raise SpecError(f"unknown dialect {dialect!r}")
+    return _template(FINGERPRINT_TEMPLATES, dialect).format(inner=inner)
 
 
 def bucket_expression(spec: TableSpec, dialect: str, buckets: int) -> str:
@@ -127,11 +150,7 @@ def bucket_expression(spec: TableSpec, dialect: str, buckets: int) -> str:
     if buckets < 1:
         raise SpecError("buckets must be positive")
     key = key_expression(spec, dialect)
-    if dialect == "postgres":
-        return f"abs(hashtext({key})) % {buckets}"
-    if dialect == "clickhouse":
-        return f"cityHash64({key}) % {buckets}"
-    raise SpecError(f"unknown dialect {dialect!r}")
+    return _template(BUCKET_TEMPLATES, dialect).format(key=key, buckets=buckets)
 
 
 def _where_sql(spec: TableSpec, extra: str | None = None) -> str:

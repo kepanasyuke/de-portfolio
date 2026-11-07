@@ -20,8 +20,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 SLOW_WHERE = """
 SELECT category, sum(net_amount) AS revenue
@@ -183,6 +183,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _case_result(
+    client: ClickHouse, case: Case, runs: int
+) -> tuple[str, str, float, str, float, str] | None:
+    """Measure both variants of one case, or None when the database is unreachable."""
+    try:
+        slow_seconds = client.run_repeated(case.slow_sql, runs)
+        fast_seconds = client.run_repeated(case.fast_sql, runs)
+    except (urllib.error.URLError, TimeoutError) as error:
+        print(f"{case.title}: skipped ({error})")
+        result = None
+    else:
+        speedup = f"{slow_seconds / fast_seconds:.1f}x" if fast_seconds else "n/a"
+        result = (
+            case.title,
+            case.slow_label,
+            slow_seconds,
+            case.fast_label,
+            fast_seconds,
+            speedup,
+        )
+    return result
+
+
 def main() -> int:
     args = parse_args()
     client = ClickHouse(args.host, args.port, args.database, args.user, args.password)
@@ -191,18 +214,8 @@ def main() -> int:
         print(f"seeding {args.rows} synthetic order lines ...")
         client.execute(SEED_SALES.format(rows=args.rows))
 
-    results = []
-    for case in CASES:
-        try:
-            slow_ms = client.run_repeated(case.slow_sql, args.runs)
-            fast_ms = client.run_repeated(case.fast_sql, args.runs)
-        except (urllib.error.URLError, TimeoutError) as error:
-            print(f"{case.title}: skipped ({error})")
-            continue
-        speedup = f"{slow_ms / fast_ms:.1f}x" if fast_ms else "n/a"
-        results.append((case.title, case.slow_label, slow_ms, case.fast_label, fast_ms, speedup))
-
-    print(format_table(results))
+    measured = [_case_result(client, case, args.runs) for case in CASES]
+    print(format_table([result for result in measured if result is not None]))
     print(f"\nmedian of {args.runs} runs, server-side elapsed time")
     return 0
 

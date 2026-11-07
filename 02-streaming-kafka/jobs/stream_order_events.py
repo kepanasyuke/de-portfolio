@@ -107,13 +107,8 @@ def normalise(raw):
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-    spark = build_session("order-events-stream")
-
-    events = normalise(read_stream(spark, args.bootstrap, args.topic, args.max_offsets_per_trigger))
-    deduped = events.withWatermark("occurred_at", "1 hour").dropDuplicates(["event_id", "occurred_at"])
-
+def _start_query(deduped, args: argparse.Namespace):
+    """Start the stream: bounded for a backfill, continuous otherwise."""
     writer = (
         deduped.writeStream.format("parquet")
         .option("path", args.bronze_root)
@@ -121,18 +116,29 @@ def main(argv: list[str] | None = None) -> int:
         .outputMode("append")
         .partitionBy("event_date")
     )
-    query = (
-        writer.trigger(availableNow=True).start()
+    triggered = (
+        writer.trigger(availableNow=True)
         if args.once
-        else writer.trigger(processingTime=args.trigger_interval).start()
+        else writer.trigger(processingTime=args.trigger_interval)
     )
+    return triggered.start()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    spark = build_session("order-events-stream")
+
+    events = normalise(read_stream(spark, args.bootstrap, args.topic, args.max_offsets_per_trigger))
+    deduped = events.withWatermark("occurred_at", "1 hour").dropDuplicates(["event_id", "occurred_at"])
+
+    query = _start_query(deduped, args)
     print(f"streaming {args.topic} -> {args.bronze_root} (checkpoint {args.checkpoint_root})")
     query.awaitTermination()
-    if query.exception():
-        print(f"stream failed: {query.exception()}", file=sys.stderr)
-        return 1
+    failure = query.exception()
+    if failure is not None:
+        print(f"stream failed: {failure}", file=sys.stderr)
     spark.stop()
-    return 0
+    return 1 if failure is not None else 0
 
 
 if __name__ == "__main__":

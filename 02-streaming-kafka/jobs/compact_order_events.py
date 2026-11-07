@@ -21,7 +21,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common.session import build_session, jdbc_options
-from pyspark.sql import DataFrame, Window, functions as F
+from pyspark.sql import DataFrame, Window
+from pyspark.sql import functions as F
 
 STAGING_COLUMNS = [
     "event_id",

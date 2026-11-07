@@ -28,7 +28,8 @@ class PostgresCursor:
     def fetch_all(self, sql: str) -> list[tuple[Any, ...]]:
         with self._connection.cursor() as cursor:
             cursor.execute(sql)
-            return list(cursor.fetchall())
+            rows = list(cursor.fetchall())
+        return rows
 
     def close(self) -> None:
         self._connection.rollback()
@@ -69,14 +70,16 @@ class ClickHouseCursor:
 def open_cursor(dialect: str, dsn: str) -> PostgresCursor | ClickHouseCursor:
     """Build a cursor from a dialect name and a DSN."""
     if dialect == "postgres":
-        return PostgresCursor(dsn)
-    if dialect == "clickhouse":
+        cursor: PostgresCursor | ClickHouseCursor = PostgresCursor(dsn)
+    elif dialect == "clickhouse":
         parsed = urllib.parse.urlparse(dsn if "://" in dsn else f"http://{dsn}")
-        return ClickHouseCursor(
+        cursor = ClickHouseCursor(
             host=parsed.hostname or "localhost",
             port=parsed.port or 8123,
             database=(parsed.path or "/marts").lstrip("/") or "marts",
             user=parsed.username or "default",
             password=parsed.password or "",
         )
-    raise ValueError(f"unsupported dialect {dialect!r}")
+    else:
+        raise ValueError(f"unsupported dialect {dialect!r}")
+    return cursor

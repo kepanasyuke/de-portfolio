@@ -6,7 +6,6 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
-
 from parity.compare import (
     Signature,
     canonical,
@@ -163,10 +162,11 @@ class FakeCursor:
 
     def fetch_all(self, sql: str) -> list[tuple]:
         self.queries.append(sql)
-        for marker, rows in self.responses.items():
-            if marker in sql:
-                return rows
-        return []
+        rows = next(
+            (rows for marker, rows in self.responses.items() if marker in sql),
+            [],
+        )
+        return rows
 
 
 def test_compare_table_drills_into_failing_buckets_only():

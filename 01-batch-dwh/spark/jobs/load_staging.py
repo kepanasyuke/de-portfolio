@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.schemas import ENTITIES, ORDER_STATUSES, STAGING_COLUMNS
 from common.session import build_session, jdbc_options
 from common.transforms import cast_columns, split_quarantine, trim_strings, with_dq_errors
-from pyspark.sql import DataFrame, functions as F
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
 
 CASTS: dict[str, dict[str, str]] = {
     "customers": {"created_at": "timestamp"},

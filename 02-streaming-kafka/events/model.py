@@ -15,9 +15,10 @@ a revenue report.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 EVENT_TYPES = ("order_created", "order_paid", "order_cancelled", "order_refunded")
 
@@ -49,46 +50,62 @@ class EventError(ValueError):
         super().__init__("; ".join(self.reasons))
 
 
-def _as_datetime(value: Any, reasons: list[str], field: str) -> datetime | None:
+def _parse_moment(value: Any, reasons: list[str], field: str) -> datetime | None:
+    """Turn the raw timestamp into a datetime, or None with a reason appended."""
+    moment: datetime | None = None
     if isinstance(value, datetime):
         moment = value
     elif isinstance(value, str) and value.strip():
-        text = value.strip().replace("Z", "+00:00")
         try:
-            moment = datetime.fromisoformat(text)
+            moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
         except ValueError:
             reasons.append(f"{field}: {value!r} is not an ISO-8601 timestamp")
-            return None
     else:
         reasons.append(f"{field}: missing timestamp")
-        return None
-
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
+    return moment
 
 
-def _as_decimal(value: Any, reasons: list[str], field: str) -> Decimal | None:
-    if value is None or value == "":
-        return None
+def _as_datetime(value: Any, reasons: list[str], field: str) -> datetime | None:
+    """Normalise a timestamp to UTC; naive values are treated as UTC."""
+    moment = _parse_moment(value, reasons, field)
+    normalised = None
+    if moment is not None:
+        aware = moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+        normalised = aware.astimezone(timezone.utc)
+    return normalised
+
+
+def _to_decimal(value: Any, reasons: list[str], field: str) -> Decimal | None:
+    """Parse a number, recording a reason instead of raising on garbage."""
+    amount: Decimal | None = None
     try:
         amount = Decimal(str(value))
     except (InvalidOperation, ValueError):
         reasons.append(f"{field}: {value!r} is not a number")
-        return None
-    if amount < 0:
-        reasons.append(f"{field}: must be non-negative, got {amount}")
+    return amount
+
+
+def _as_decimal(value: Any, reasons: list[str], field: str) -> Decimal | None:
+    """Optional non-negative money value."""
+    amount = None
+    if value not in (None, ""):
+        amount = _to_decimal(value, reasons, field)
+        if amount is not None and amount < 0:
+            reasons.append(f"{field}: must be non-negative, got {amount}")
     return amount
 
 
 def _as_text(value: Any, reasons: list[str], field: str) -> str | None:
+    """Required non-empty text field."""
+    text: str | None = None
     if value is None:
         reasons.append(f"{field}: is required")
-        return None
-    text = str(value).strip()
-    if not text:
-        reasons.append(f"{field}: must not be empty")
-        return None
+    else:
+        stripped = str(value).strip()
+        if stripped:
+            text = stripped
+        else:
+            reasons.append(f"{field}: must not be empty")
     return text
 
 
@@ -143,6 +160,16 @@ def apply_transition(current_status: str | None, event_type: str) -> str:
     return EVENT_STATUS[event_type]
 
 
+def _rejection_reason(current: str | None, event_type: str) -> str | None:
+    """Why this event cannot be applied to the order, or None when it can."""
+    reason: str | None = None
+    if current in TERMINAL_STATUSES:
+        reason = f"order is already {current}"
+    elif not transition_allowed(current, event_type):
+        reason = f"illegal transition from {current!r}"
+    return reason
+
+
 def fold_status(events: Iterable[Mapping[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
     """Replay events in time order and return the final status plus rejected events.
 
@@ -156,15 +183,11 @@ def fold_status(events: Iterable[Mapping[str, Any]]) -> tuple[str | None, list[d
     current: str | None = None
     rejected: list[dict[str, Any]] = []
     for event in parsed:
-        if current in TERMINAL_STATUSES:
-            rejected.append({**event, "reason": f"order is already {current}"})
-            continue
-        if not transition_allowed(current, event["event_type"]):
-            rejected.append(
-                {**event, "reason": f"illegal transition from {current!r}"}
-            )
-            continue
-        current = EVENT_STATUS[event["event_type"]]
+        reason = _rejection_reason(current, event["event_type"])
+        if reason is None:
+            current = EVENT_STATUS[event["event_type"]]
+        else:
+            rejected.append({**event, "reason": reason})
     return current, rejected
 
 
@@ -188,6 +211,17 @@ def deduplicate(events: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return sorted(latest.values(), key=lambda item: (item["occurred_at"], item["event_id"]))
 
 
+def _serialise_value(value: Any) -> Any:
+    """JSON-friendly form: datetimes end with Z, Decimals keep their digits."""
+    if isinstance(value, datetime):
+        serialised = value.isoformat().replace("+00:00", "Z")
+    elif isinstance(value, Decimal):
+        serialised = format(value, "f")
+    else:
+        serialised = value
+    return serialised
+
+
 def to_json(event: Mapping[str, Any]) -> str:
     """Serialise a normalised event for Kafka (datetimes and decimals are strings)."""
     payload: dict[str, Any] = {}
@@ -202,14 +236,8 @@ def to_json(event: Mapping[str, Any]) -> str:
         "currency",
     ):
         value = event.get(key)
-        if value is None:
-            continue
-        if isinstance(value, datetime):
-            payload[key] = value.isoformat().replace("+00:00", "Z")
-        elif isinstance(value, Decimal):
-            payload[key] = format(value, "f")
-        else:
-            payload[key] = value
+        if value is not None:
+            payload[key] = _serialise_value(value)
     return json.dumps(payload, ensure_ascii=False)
 
 

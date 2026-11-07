@@ -19,10 +19,11 @@ money and must not produce a false mismatch.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from .spec import NULL_TOKEN, TableSpec
 
@@ -38,22 +39,24 @@ class SqlCursor(Protocol):
 def canonical(value: Any) -> str:
     """Render a value the same way on both sides of a migration."""
     if value is None:
-        return NULL_TOKEN
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, Decimal):
-        return format(value.normalize(), "f") if value != 0 else "0"
-    if isinstance(value, float):
-        return format(Decimal(str(value)).normalize(), "f")
-    if isinstance(value, datetime):
+        rendered = NULL_TOKEN
+    elif isinstance(value, bool):
+        rendered = "true" if value else "false"
+    elif isinstance(value, Decimal):
+        rendered = format(value.normalize(), "f") if value != 0 else "0"
+    elif isinstance(value, float):
+        rendered = format(Decimal(str(value)).normalize(), "f")
+    elif isinstance(value, datetime):
         moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-        return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value).hex()
-    text = str(value).strip()
-    return text if text else NULL_TOKEN
+        rendered = moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    elif isinstance(value, date):
+        rendered = value.isoformat()
+    elif isinstance(value, (bytes, bytearray)):
+        rendered = bytes(value).hex()
+    else:
+        text = str(value).strip()
+        rendered = text if text else NULL_TOKEN
+    return rendered
 
 
 def row_fingerprint(row: Mapping[str, Any], columns: Sequence[str]) -> str:
@@ -62,17 +65,26 @@ def row_fingerprint(row: Mapping[str, Any], columns: Sequence[str]) -> str:
     return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
 
-def _as_decimal(value: Any) -> Decimal | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, Decimal):
-        return value
-    if isinstance(value, (int, float)):
-        return Decimal(str(value))
+def _decimal_from_text(text: str) -> Decimal | None:
+    """Parse a number written by a human («1 234,56») or return None."""
     try:
-        return Decimal(str(value).replace(" ", "").replace(",", "."))
+        number = Decimal(text.replace(" ", "").replace(",", "."))
     except (InvalidOperation, ValueError):
-        return None
+        number = None
+    return number
+
+
+def _as_decimal(value: Any) -> Decimal | None:
+    """Numeric view of a value, or None when it is not a number at all."""
+    if isinstance(value, bool) or value is None:
+        number = None
+    elif isinstance(value, Decimal):
+        number = value
+    elif isinstance(value, (int, float)):
+        number = Decimal(str(value))
+    else:
+        number = _decimal_from_text(str(value))
+    return number
 
 
 @dataclass(frozen=True)
@@ -80,6 +92,16 @@ class ColumnDiff:
     column: str
     source: Any
     target: Any
+
+
+def _values_differ(left: Any, right: Any, tolerance: Decimal) -> bool:
+    """Numbers compare with a tolerance, everything else canonically."""
+    left_number, right_number = _as_decimal(left), _as_decimal(right)
+    if left_number is not None and right_number is not None:
+        differs = abs(left_number - right_number) > tolerance
+    else:
+        differs = canonical(left) != canonical(right)
+    return differs
 
 
 def diff_row(
@@ -91,19 +113,16 @@ def diff_row(
 ) -> list[ColumnDiff]:
     """Column-level differences with numeric tolerance and normalised comparison."""
     skipped = set(ignore)
-    differences: list[ColumnDiff] = []
-    for column in columns:
-        if column in skipped:
-            continue
-        left, right = source_row.get(column), target_row.get(column)
-        left_number, right_number = _as_decimal(left), _as_decimal(right)
-        if left_number is not None and right_number is not None:
-            if abs(left_number - right_number) <= tolerance:
-                continue
-        elif canonical(left) == canonical(right):
-            continue
-        differences.append(ColumnDiff(column=column, source=left, target=right))
-    return differences
+    return [
+        ColumnDiff(
+            column=column,
+            source=source_row.get(column),
+            target=target_row.get(column),
+        )
+        for column in columns
+        if column not in skipped
+        and _values_differ(source_row.get(column), target_row.get(column), tolerance)
+    ]
 
 
 @dataclass(frozen=True)
@@ -115,7 +134,7 @@ class Signature:
     max_fingerprint: str | None
 
     @classmethod
-    def from_row(cls, row: Sequence[Any]) -> "Signature":
+    def from_row(cls, row: Sequence[Any]) -> Signature:
         return cls(
             bucket=int(row[0]),
             row_count=int(row[1]),
@@ -129,7 +148,7 @@ class Signature:
         """A bucket is equal when the count, the distinct-fingerprint count and extremes agree."""
         return self.min_fingerprint is not None
 
-    def equals(self, other: "Signature") -> bool:
+    def equals(self, other: Signature) -> bool:
         return (
             self.row_count == other.row_count
             and self.distinct_fingerprints == other.distinct_fingerprints
@@ -150,10 +169,12 @@ class BucketDiff:
 
     def describe(self) -> str:
         if self.state == "match":
-            return f"bucket {self.bucket}: match ({self.source.row_count if self.source else 0} rows)"
-        left = self.source.row_count if self.source else 0
-        right = self.target.row_count if self.target else 0
-        return f"bucket {self.bucket}: {self.state} (source={left}, target={right})"
+            text = f"bucket {self.bucket}: match ({self.source.row_count if self.source else 0} rows)"
+        else:
+            left = self.source.row_count if self.source else 0
+            right = self.target.row_count if self.target else 0
+            text = f"bucket {self.bucket}: {self.state} (source={left}, target={right})"
+        return text
 
 
 def compare_signatures(
@@ -185,7 +206,7 @@ class KeyDiff:
     def total(self) -> int:
         return len(self.missing_in_target) + len(self.extra_in_target) + len(self.changed)
 
-    def add(self, other: "KeyDiff") -> None:
+    def add(self, other: KeyDiff) -> None:
         self.missing_in_target.extend(other.missing_in_target)
         self.extra_in_target.extend(other.extra_in_target)
         self.changed.extend(other.changed)
@@ -236,6 +257,31 @@ def read_signatures(cursor: SqlCursor, sql: str) -> dict[int, Signature]:
     return {int(row[0]): Signature.from_row(row) for row in cursor.fetch_all(sql)}
 
 
+def _row_dict(values: Sequence[Any], columns: Sequence[str]) -> dict[str, Any]:
+    """Map a fetched row back onto its column names (key first)."""
+    return dict(zip(["k", *columns], values, strict=True))
+
+
+def _column_diffs(
+    spec: TableSpec,
+    keys: Sequence[str],
+    left_rows: Mapping[Any, Sequence[Any]],
+    right_rows: Mapping[Any, Sequence[Any]],
+) -> dict[str, list[ColumnDiff]]:
+    """Column-level diff for the keys present on both sides."""
+    columns = list(spec.compared_columns)
+    return {
+        key: diff_row(
+            _row_dict(left_rows[key], columns),
+            _row_dict(right_rows[key], columns),
+            columns,
+            ignore=spec.ignore,
+        )
+        for key in keys
+        if key in left_rows and key in right_rows
+    }
+
+
 def compare_table(
     source: SqlCursor,
     target: SqlCursor,
@@ -268,14 +314,6 @@ def compare_table(
         keys = report.key_diff.changed[:sample_rows]
         left_rows = {row[0]: row for row in source.fetch_all(row_values_sql(spec, source_dialect, keys))}
         right_rows = {row[0]: row for row in target.fetch_all(row_values_sql(spec, target_dialect, keys))}
-        columns = list(spec.compared_columns)
-        for key in keys:
-            if key not in left_rows or key not in right_rows:
-                continue
-            source_row = dict(zip(["k", *columns], left_rows[key]))
-            target_row = dict(zip(["k", *columns], right_rows[key]))
-            report.column_diffs[key] = diff_row(
-                source_row, target_row, columns, ignore=spec.ignore
-            )
+        report.column_diffs = _column_diffs(spec, keys, left_rows, right_rows)
 
     return report

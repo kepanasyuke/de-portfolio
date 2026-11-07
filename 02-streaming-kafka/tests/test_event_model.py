@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-
 from events.model import (
     EventError,
     apply_transition,

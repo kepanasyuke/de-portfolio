@@ -12,11 +12,12 @@ The module is deliberately pure: no connections, no I/O, no engine imports.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import yaml
 
@@ -49,15 +50,18 @@ def _ident(value: Any, field_name: str) -> str:
 
 
 def _literal(value: Any) -> str:
+    """Render a Python value as a SQL literal."""
     if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float, Decimal)):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return f"'{value.isoformat()}'"
-    return "'" + str(value).replace("'", "''") + "'"
+        rendered = "NULL"
+    elif isinstance(value, bool):
+        rendered = "TRUE" if value else "FALSE"
+    elif isinstance(value, (int, float, Decimal)):
+        rendered = str(value)
+    elif isinstance(value, (datetime, date)):
+        rendered = f"'{value.isoformat()}'"
+    else:
+        rendered = "'" + str(value).replace("'", "''") + "'"
+    return rendered
 
 
 def _single_statement(sql: str, field_name: str) -> str:
@@ -96,9 +100,7 @@ class Rule:
     @property
     def keys(self) -> tuple[str, ...]:
         """Columns the assertion is scoped to."""
-        if self.columns:
-            return self.columns
-        return (self.column,) if self.column else ()
+        return self.columns if self.columns else ((self.column,) if self.column else ())
 
     @property
     def label(self) -> str:
@@ -213,11 +215,14 @@ def rule_from_mapping(mapping: Mapping[str, Any], index: int = 0) -> Rule:
 
 
 def _as_number(value: Any, field_name: str) -> float | None:
+    """Bounds must be numeric; booleans are not a number here."""
     if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        number = None
+    elif isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         raise RuleError(f"{field_name}: expected a number, got {type(value).__name__}")
-    return value
+    else:
+        number = value
+    return number
 
 
 def _validate_required(rule: Rule) -> None:
@@ -235,9 +240,8 @@ def _validate_required(rule: Rule) -> None:
         raise RuleError(f"rule {rule.name}: use either column or columns, not both")
     if rule.type == "accepted_values" and not rule.values:
         raise RuleError(f"rule {rule.name}: 'values' is required")
-    if rule.type == "referential_integrity":
-        if not rule.ref_table or not rule.ref_column:
-            raise RuleError(f"rule {rule.name}: ref_table and ref_column are required")
+    if rule.type == "referential_integrity" and (not rule.ref_table or not rule.ref_column):
+        raise RuleError(f"rule {rule.name}: ref_table and ref_column are required")
     if rule.type == "range" and rule.min_value is None and rule.max_value is None:
         raise RuleError(f"rule {rule.name}: range requires min_value and/or max_value")
     if rule.type == "row_count" and rule.min_value is None and rule.max_value is None:
@@ -396,9 +400,12 @@ class Result:
 
     @property
     def failed_ratio(self) -> float:
+        """Share of checked rows that violated the rule."""
         if self.checked_rows == 0:
-            return 0.0 if self.failed_rows == 0 else 1.0
-        return self.failed_rows / self.checked_rows
+            ratio = 1.0 if self.failed_rows else 0.0
+        else:
+            ratio = self.failed_rows / self.checked_rows
+        return ratio
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -442,13 +449,15 @@ def evaluate(
 def gate(results: Iterable[Result], fail_on: str = "error") -> bool:
     """Return True when the QA gate must stop the pipeline."""
     if fail_on == "none":
-        return False
-    blocking = {"failed"} if fail_on == "error" else {"failed", "warned"}
-    return any(result.status in blocking for result in results)
+        closed = False
+    else:
+        blocking = {"failed"} if fail_on == "error" else {"failed", "warned"}
+        closed = any(result.status in blocking for result in results)
+    return closed
 
 
 def summarize(results: Sequence[Result]) -> dict[str, int]:
-    summary = {status: 0 for status in STATUSES}
+    summary = dict.fromkeys(STATUSES, 0)
     for result in results:
         summary[result.status] += 1
     summary["total"] = len(results)

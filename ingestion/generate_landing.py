@@ -12,10 +12,10 @@ import argparse
 import csv
 import random
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
 
 CATEGORIES = ("electronics", "books", "grocery", "fashion", "sport")
 SEGMENTS = ("retail", "smb", "enterprise")
@@ -93,6 +93,25 @@ def _write(path: Path, header: list[str], rows: Iterable[list[str]]) -> int:
             writer.writerow(row)
             count += 1
     return count
+
+
+def _entity_rows(
+    rows: list[list[str]],
+    entity: str,
+    header: list[str],
+    rng: random.Random,
+    defect_ratio: float,
+) -> tuple[list[list[str]], int]:
+    """Break a share of rows for one entity and report how many were broken."""
+    index = {name: position for position, name in enumerate(header)}
+    output: list[list[str]] = []
+    defects = 0
+    for row in rows:
+        broken = rng.random() < defect_ratio
+        if broken:
+            defects += 1
+        output.append(_defect(entity, row, rng, index) if broken else row)
+    return output, defects
 
 
 def generate(
@@ -194,14 +213,8 @@ def generate(
     defects = 0
     written: dict[str, int] = {}
     for entity, (header, rows) in entities.items():
-        index = {name: position for position, name in enumerate(header)}
-        output: list[list[str]] = []
-        for row in rows:
-            if rng.random() < defect_ratio:
-                defects += 1
-                output.append(_defect(entity, row, rng, index))
-            else:
-                output.append(row)
+        output, entity_defects = _entity_rows(rows, entity, header, rng, defect_ratio)
+        defects += entity_defects
         if entity == "orders" and output:
             output.append(list(output[0]))
             defects += 1

@@ -17,7 +17,7 @@ help:
 	@echo "stream    - запустить Kafka -> Spark streaming джобу в контейнере"
 	@echo "dq        - прогнать data-quality проверки против локального DWH"
 	@echo "test      - pytest по всем проектам"
-	@echo "lint      - ruff"
+	@echo "lint      - контракт стиля (один выход, без continue, вложенность ≤ 2) + ruff"
 	@echo "psql      - psql внутрь контейнера postgres"
 	@echo "showcase  - открыть docs/index.html в браузере"
 	@echo "game      - открыть игру 06-pipeline-game/index.html"
@@ -60,6 +60,7 @@ test:
 	$(PY) -m pytest
 
 lint:
+	$(PY) scripts/check_style.py .
 	$(PY) -m ruff check .
 
 fmt:

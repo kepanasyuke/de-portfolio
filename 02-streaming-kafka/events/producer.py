@@ -11,17 +11,18 @@ statuses, negative amounts, timestamps in the future.
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import sys
 import time
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from events.model import EVENT_STATUS, EventError, parse_event, to_json
+from events.model import EventError, parse_event, to_json
 
 SOURCE_SYSTEM = "orders-service"
 
@@ -83,6 +84,11 @@ def corrupt(event: dict, rng: random.Random) -> dict:
     return broken
 
 
+def _maybe_corrupt(event: dict, rng: random.Random, dirty_ratio: float) -> dict:
+    """Break the event with probability ``dirty_ratio``."""
+    return corrupt(event, rng) if rng.random() < dirty_ratio else event
+
+
 def generate(
     orders: int, dirty_ratio: float, seed: int, start: datetime | None = None
 ) -> Iterator[dict]:
@@ -93,29 +99,40 @@ def generate(
         order_id = f"ORD-{moment:%Y%m%d}-{index:05d}"
         amount = Decimal(rng.randrange(100_00, 500_00)) / Decimal(100)
         for event in lifecycle(order_id, f"CUST-{rng.randrange(1, 400):05d}", amount, moment):
-            if rng.random() < dirty_ratio:
-                yield corrupt(event, rng)
-            else:
-                yield event
+            yield _maybe_corrupt(event, rng, dirty_ratio)
+
+
+def _json_safe(value: object) -> object:
+    """Render datetimes and decimals the same way the happy path does."""
+    if isinstance(value, datetime):
+        serialised: object = value.isoformat().replace("+00:00", "Z")
+    elif isinstance(value, Decimal):
+        serialised = format(value, "f")
+    else:
+        serialised = value
+    return serialised
+
+
+def _passthrough(event: dict) -> tuple[str, str]:
+    """Publish an invalid event unchanged: the consumer side decides its fate."""
+    payload = {
+        key: _json_safe(value)
+        for key, value in event.items()
+        if not key.startswith("_")
+    }
+    key = str(event.get("order_id") or "unknown")
+    return key, json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def prepare(event: dict) -> tuple[str, str]:
     """Validate an event and return ``(key, payload)`` for the producer."""
     try:
         normalised = parse_event(event)
-    except EventError as error:
-        payload = {key: value for key, value in event.items() if not key.startswith("_")}
-        for key, value in list(payload.items()):
-            if isinstance(value, datetime):
-                payload[key] = value.isoformat().replace("+00:00", "Z")
-            elif isinstance(value, Decimal):
-                payload[key] = format(value, "f")
-        import json
-
-        return str(event.get("order_id") or "unknown"), json.dumps(
-            payload, ensure_ascii=False, default=str
-        )
-    return normalised["order_id"], to_json(normalised)
+    except EventError:
+        prepared = _passthrough(event)
+    else:
+        prepared = normalised["order_id"], to_json(normalised)
+    return prepared
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -130,20 +147,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-    events = generate(args.orders, args.dirty_ratio, args.seed)
+def _print_events(events: Iterator[dict]) -> None:
+    for event in events:
+        key, payload = prepare(event)
+        print(f"{key}\t{payload}")
 
-    if args.dry_run:
-        for event in events:
-            key, payload = prepare(event)
-            print(f"{key}\t{payload}")
-        return 0
 
+def _report_send_error(error: object) -> None:
+    print(f"send failed: {error}", file=sys.stderr)
+
+
+def _pace(rate: float) -> None:
+    """Throttle the producer when a rate is requested."""
+    if rate:
+        time.sleep(1 / rate)
+
+
+def _send(producer: object, topic: str, rate: float, event: dict) -> int:
+    """Publish one event and return the increment for the sent counter."""
+    key, payload = prepare(event)
+    producer.send(topic, key=key, value=payload).add_errback(_report_send_error)
+    _pace(rate)
+    return 1
+
+
+def _make_producer(bootstrap: str) -> object:
     from kafka import KafkaProducer
 
-    producer = KafkaProducer(
-        bootstrap_servers=args.bootstrap.split(","),
+    return KafkaProducer(
+        bootstrap_servers=bootstrap.split(","),
         key_serializer=lambda value: value.encode("utf-8"),
         value_serializer=lambda value: value.encode("utf-8"),
         acks="all",
@@ -152,20 +184,27 @@ def main(argv: list[str] | None = None) -> int:
         linger_ms=20,
     )
 
+
+def _publish(args: argparse.Namespace, events: Iterator[dict]) -> None:
+    """Send every event to Kafka, flushing and closing the producer."""
+    producer = _make_producer(args.bootstrap)
     sent = 0
     try:
         for event in events:
-            key, payload = prepare(event)
-            producer.send(args.topic, key=key, value=payload).add_errback(
-                lambda error: print(f"send failed: {error}", file=sys.stderr)
-            )
-            sent += 1
-            if args.rate:
-                time.sleep(1 / args.rate)
+            sent += _send(producer, args.topic, args.rate, event)
         producer.flush()
     finally:
         producer.close(timeout=10)
     print(f"published {sent} events to {args.topic} @ {args.bootstrap}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    events = generate(args.orders, args.dirty_ratio, args.seed)
+    if args.dry_run:
+        _print_events(events)
+    else:
+        _publish(args, events)
     return 0
 
 

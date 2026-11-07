@@ -12,9 +12,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .adapters import open_cursor
 from .compare import TableReport, compare_table
@@ -44,17 +45,27 @@ def report_to_dict(report: TableReport) -> dict[str, Any]:
     }
 
 
+def _bucket_lines(report: TableReport) -> list[str]:
+    return [
+        f"  {bucket.describe()}"
+        for bucket in report.bucket_diffs
+        if bucket.state != "match"
+    ]
+
+
+def _column_lines(report: TableReport) -> list[str]:
+    return [
+        f"  key {key}: {diff.column}: source={diff.source!r} target={diff.target!r}"
+        for key, diffs in report.column_diffs.items()
+        for diff in diffs
+    ]
+
+
 def render(reports: Sequence[TableReport]) -> str:
     lines = [report.summary() for report in reports]
     for report in reports:
-        for bucket in report.bucket_diffs:
-            if bucket.state != "match":
-                lines.append(f"  {bucket.describe()}")
-        for key, diffs in report.column_diffs.items():
-            for diff in diffs:
-                lines.append(
-                    f"  key {key}: {diff.column}: source={diff.source!r} target={diff.target!r}"
-                )
+        lines.extend(_bucket_lines(report))
+        lines.extend(_column_lines(report))
     verdict = "PASS" if all(report.ok for report in reports) else "FAIL"
     lines.append(f"\nverdict: {verdict}")
     return "\n".join(lines)
@@ -73,49 +84,72 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _compare_all(
+    args: argparse.Namespace,
+    specs: Sequence[TableSpec],
+    source: Any,
+    target: Any,
+) -> list[TableReport]:
+    """Compare every table in the spec, reporting progress on stderr."""
+    reports: list[TableReport] = []
+    for spec in specs:
+        report = compare_table(
+            source,
+            target,
+            spec,
+            args.source_dialect,
+            args.target_dialect,
+            buckets=args.buckets,
+            sample_rows=args.sample_rows,
+        )
+        reports.append(report)
+        print(report.summary(), file=sys.stderr)
+    return reports
+
+
+def _finish(args: argparse.Namespace, reports: Sequence[TableReport]) -> int:
+    """Print the report, optionally persist it, and return the gate code."""
+    print(render(reports))
+    if args.json_out:
+        payload = {"tables": [report_to_dict(report) for report in reports]}
+        Path(args.json_out).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return 0 if all(report.ok for report in reports) else 1
+
+
+def _run(args: argparse.Namespace, specs: Sequence[TableSpec]) -> int:
+    """Connect to both sides, compare, and always close what was opened."""
+    try:
+        source = open_cursor(args.source_dialect, args.source_dsn)
+        target = open_cursor(args.target_dialect, args.target_dsn)
+    except Exception as error:  # noqa: BLE001
+        print(f"cannot connect: {error}", file=sys.stderr)
+        code = 2
+    else:
+        try:
+            reports = _compare_all(args, specs, source, target)
+        except Exception as error:  # noqa: BLE001
+            print(f"comparison failed: {type(error).__name__}: {error}", file=sys.stderr)
+            code = 2
+        else:
+            code = _finish(args, reports)
+        finally:
+            source.close()
+            target.close()
+    return code
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         specs = load_specs(args.spec)
     except (SpecError, FileNotFoundError, json.JSONDecodeError) as error:
         print(f"invalid spec: {error}", file=sys.stderr)
-        return 2
-
-    try:
-        source = open_cursor(args.source_dialect, args.source_dsn)
-        target = open_cursor(args.target_dialect, args.target_dsn)
-    except Exception as error:  # noqa: BLE001
-        print(f"cannot connect: {error}", file=sys.stderr)
-        return 2
-
-    reports: list[TableReport] = []
-    try:
-        for spec in specs:
-            report = compare_table(
-                source,
-                target,
-                spec,
-                args.source_dialect,
-                args.target_dialect,
-                buckets=args.buckets,
-                sample_rows=args.sample_rows,
-            )
-            reports.append(report)
-            print(report.summary(), file=sys.stderr)
-    except Exception as error:  # noqa: BLE001
-        print(f"comparison failed: {type(error).__name__}: {error}", file=sys.stderr)
-        return 2
-    finally:
-        source.close()
-        target.close()
-
-    print(render(reports))
-    if args.json_out:
-        args.json_out.write_text(
-            json.dumps({"tables": [report_to_dict(r) for r in reports]}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    return 0 if all(report.ok for report in reports) else 1
+        code = 2
+    else:
+        code = _run(args, specs)
+    return code
 
 
 if __name__ == "__main__":

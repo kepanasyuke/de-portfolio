@@ -1,9 +1,9 @@
 """Declarative data-quality engine used by every project in this portfolio."""
 
 from .checks import (
+    Result,
     Rule,
     RuleError,
-    Result,
     build_sql,
     evaluate,
     gate,

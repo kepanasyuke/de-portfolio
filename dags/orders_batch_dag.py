@@ -14,23 +14,22 @@ Guarantees this DAG is built around
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
-
 from common.commands import dq_command, spark_submit
 from common.sensors import LandingPartitionSensor
 from common.settings import (
     BATCH_JOBS_DIR,
+    DEFAULT_ARGS,
     DQ_RULES_DIR,
     DWH_CONN_ID,
     LANDING_BUCKET,
     LANDING_PREFIX,
     SQL_DIR,
-    DEFAULT_ARGS,
 )
 
 DOC = __doc__
