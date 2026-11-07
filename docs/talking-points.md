@@ -33,7 +33,7 @@
 
 | Требование | Файл | Формулировка |
 | --- | --- | --- |
-| Python, поддерживаемый код | весь репозиторий | «Типизация, docstring с „почему“, чистые функции отдельно от I/O — поэтому 60 тестов идут без БД и Spark» |
+| Python, поддерживаемый код | весь репозиторий | «Типизация, docstring с „почему“, чистые функции отдельно от I/O — поэтому 538 тестов идут без БД и Spark» |
 | Глубокий SQL | `01-batch-dwh/sql/02_merge_orders.sql`, `04_build_dims.sql` | «Upsert по бизнес-ключу, SCD2 в два statement, частичный уникальный индекс, который ловит две актуальные версии клиента» |
 | Production pipelines | `dags/orders_batch_dag.py` | «Сенсор на партицию landing, ретраи с backoff, `max_active_runs=1`, гейт как отдельная задача» |
 | Airflow | `dags/*`, `dags/common/sensors.py` | «Свой S3-сенсор с `mode="reschedule"`, чтобы не занимать слот, и команды spark-submit в одном месте» |
@@ -100,7 +100,7 @@ Kafka даёт at-least-once, Spark гарантирует, что чекпои�
 
 ## Мини-демо на 2 минуты
 
-1. `make test` — 60 тестов, без Docker.
+1. `make test` — 538 тестов, без Docker.
 2. `python -m dq.run --rules 03-dq-framework/dq/rules.yml --show-sql` — показать,
    во что компилируется YAML-правило.
 3. Открыть `06-pipeline-game/index.html` и намеренно не апгрейдить Clean: очередь

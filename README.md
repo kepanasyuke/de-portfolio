@@ -13,7 +13,7 @@ Airflow, Spark, Kafka, DWH (3NF + Kimball), Data Quality, ClickHouse, мигра
 cp .env.example .env
 make up          # postgres, kafka, minio, spark, airflow, clickhouse, prometheus, grafana
 make landing     # синтетический landing-слой: 800 заказов + справочники
-make test        # 60 тестов без Docker и без Spark
+make test        # 538 тестов без Docker и без Spark
 make showcase    # docs/index.html — витрина портфолио с анимациями
 make game        # игра «Пайплайн: ночной релиз»
 ```
@@ -70,7 +70,7 @@ make game        # игра «Пайплайн: ночной релиз»
 
 ```bash
 make lint     # check_style.py + ruff
-make test     # 70 тестов, включая tests/test_style_contract.py
+make test     # 538 тестов, включая tests/test_style_contract.py
 ```
 
 `tests/test_style_contract.py` делает две вещи: проверяет, что чекер **ловит**
@@ -106,7 +106,7 @@ ClickHouse 24.3 · MinIO (S3) · Prometheus + Grafana · pytest · ruff
 
 Честно, потому что иначе это не портфолио, а буклет:
 
-- **Проверено локально:** `pytest` — 60 тестов (контракт событий, компилятор DQ-правил,
+- **Проверено локально:** `pytest` — 538 тестов (контракт событий, компилятор DQ-правил,
   экспортёр метрик, движок реконсиляции, генератор landing-слоя); генератор
   данных отработал и создал 5 CSV с ~3% дефектов; все 7 SVG — валидный XML.
 - **Не проверено в этой среде:** `docker compose up` (Docker недоступен), реальные

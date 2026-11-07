@@ -97,12 +97,13 @@ def render_metrics(rows: Sequence[dict[str, Any]], now: datetime | None = None) 
 
 
 def fetch_rows() -> list[dict[str, Any]]:
-    import psycopg
-    from psycopg.rows import dict_row
-
     dsn = os.environ.get("DWH_DSN")
     if not dsn:
         raise RuntimeError("DWH_DSN is not set")
+
+    import psycopg
+    from psycopg.rows import dict_row
+
     with psycopg.connect(dsn, row_factory=dict_row) as connection, connection.cursor() as cursor:
         cursor.execute(LATEST_SQL)
         rows = list(cursor.fetchall())

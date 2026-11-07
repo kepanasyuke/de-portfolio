@@ -24,7 +24,8 @@
         "customer_key",
         "product_key",
         "quantity",
-        "net_amount"
+        "net_amount",
+        "_loaded_at"
       ],
       "ignore": ["_loaded_at"]
     }

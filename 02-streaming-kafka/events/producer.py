@@ -120,7 +120,8 @@ def _passthrough(event: dict) -> tuple[str, str]:
         for key, value in event.items()
         if not key.startswith("_")
     }
-    key = str(event.get("order_id") or "unknown")
+    raw_key = str(event.get("order_id") or "").strip()
+    key = raw_key or "unknown"
     return key, json.dumps(payload, ensure_ascii=False, default=str)
 
 

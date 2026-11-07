@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
-FORBIDDEN = (";", "--", "/*", "*/", "'")
+FORBIDDEN = (";", "--", "/*", "*/")
 
 DIALECTS = ("postgres", "clickhouse")
 NULL_TOKEN = "\u2205"
