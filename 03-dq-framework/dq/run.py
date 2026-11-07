@@ -243,23 +243,39 @@ def _write_report(
     Path(path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _run_rules(args: argparse.Namespace, rules: Sequence[Rule], connection: Any) -> int:
-    """Execute the rules, persist the verdicts and return the gate exit code."""
-    run_id = args.run_id or _new_run_id()
-    started = time.perf_counter()
-    try:
-        results = _collect(connection, rules)
-        if not args.no_persist:
-            _persist_safely(connection, run_id, results)
-    finally:
-        connection.close()
-
+def _report_and_gate(
+    args: argparse.Namespace, run_id: str, started: float, results: Sequence[Result]
+) -> int:
+    """Print the report, optionally persist it, and return the gate code."""
     elapsed_ms = _elapsed_ms(started)
     print(render(results))
     print(f"run_id={run_id} elapsed_ms={elapsed_ms}")
     if args.json_out:
         _write_report(args.json_out, run_id, elapsed_ms, args.fail_on, results)
     return 1 if gate(results, args.fail_on) else 0
+
+
+def _run_rules(args: argparse.Namespace, rules: Sequence[Rule], connection: Any) -> int:
+    """Execute the rules, persist the verdicts and return the gate exit code.
+
+    Any unexpected failure (a broken cursor, a lost connection in the middle of
+    the run) must still produce the documented exit code 2 instead of a
+    traceback: the pipeline reads the code, not the stack trace.
+    """
+    run_id = args.run_id or _new_run_id()
+    started = time.perf_counter()
+    try:
+        results = _collect(connection, rules)
+        if not args.no_persist:
+            _persist_safely(connection, run_id, results)
+    except Exception as error:  # noqa: BLE001
+        print(f"run failed: {type(error).__name__}: {error}", file=sys.stderr)
+        code = 2
+    else:
+        code = _report_and_gate(args, run_id, started, results)
+    finally:
+        connection.close()
+    return code
 
 
 def _connect(dsn: str) -> Any:

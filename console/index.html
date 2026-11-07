@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DE Console · управление портфолио</title>
+<link rel="stylesheet" href="/docs/assets/theme.css">
+<style>
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; }
+  h1 { font-size: 24px; letter-spacing: -.3px; }
+  .sub { margin-top: 4px; }
+  .pill b { color: var(--ink); font-weight: 600; }
+
+  .layout { display: grid; gap: 18px; margin-top: 22px; }
+  @media (min-width: 1000px) { .layout { grid-template-columns: 380px 1fr; align-items: start; } }
+
+  .actions { display: grid; gap: 8px; }
+  button.action {
+    display: flex; flex-direction: column; gap: 2px;
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+    padding: 9px 12px;
+  }
+  button.action .t { font-weight: 600; font-size: 14px; }
+  button.action .d { color: var(--muted); font-size: 12.5px; }
+  button.action.danger .t { color: var(--bad); }
+
+  .log {
+    margin-top: 14px;
+    background: #0a1020;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 150px;
+    max-height: 340px;
+    overflow: auto;
+  }
+  .log .head { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+  .log pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 var(--mono); color: #c9d6f5; }
+
+  .bars { display: grid; gap: 8px; margin-top: 4px; }
+  .bar-row { display: grid; grid-template-columns: 90px 1fr 46px; gap: 10px; align-items: center; font-size: 13px; }
+  .bar { height: 9px; border-radius: 5px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 5px; }
+
+  .grid-projects { display: grid; gap: 14px; }
+  @media (min-width: 720px) { .grid-projects { grid-template-columns: 1fr 1fr; } }
+  .project { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #0b1020; }
+  .project img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); }
+  .project .body { padding: 12px 14px 14px; }
+  .project h3 { margin: 0 0 4px; font-size: 15px; }
+  .project p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .project a { font-size: 13px; text-decoration: none; margin-right: 12px; }
+  .project a:hover { text-decoration: underline; }
+
+  .quick { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .quick a {
+    color: var(--ink); text-decoration: none; font-size: 13px;
+    border: 1px solid var(--line); background: #182245; border-radius: 9px; padding: 6px 11px;
+  }
+  .quick a:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>DE Console</h1>
+      <div class="sub">Одна панель над портфолио: стек, DQ-гейт, тесты, сайт и витрины.</div>
+    </div>
+    <div class="pills" id="pills">
+      <span class="pill">загрузка…</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="panel">
+      <h2>Действия</h2>
+      <div class="actions" id="actions"></div>
+      <div class="log" id="log">
+        <div class="head"><span id="log-title">Готово к работе</span><span id="log-time" class="muted"></span></div>
+        <pre id="log-body">Нажми «Обновить статус» или любое действие.</pre>
+      </div>
+    </div>
+
+    <div style="display: grid; gap: 18px;">
+      <div class="panel">
+        <h2>Стек</h2>
+        <table class="table" id="services">
+          <thead><tr><th>Сервис</th><th>Состояние</th><th>Health</th></tr></thead>
+          <tbody><tr><td colspan="3" class="muted">нет данных</td></tr></tbody>
+        </table>
+        <div class="quick">
+          <a href="http://localhost:8080" target="_blank" rel="noreferrer">Airflow</a>
+          <a href="http://localhost:9001" target="_blank" rel="noreferrer">MinIO</a>
+          <a href="http://localhost:3000" target="_blank" rel="noreferrer">Grafana</a>
+          <a href="http://localhost:9109/metrics" target="_blank" rel="noreferrer">DQ metrics</a>
+          <a href="/game" target="_blank" rel="noreferrer">Игра</a>
+          <a href="http://localhost:8000" target="_blank" rel="noreferrer">Сайт</a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Результат DQ-гейта</h2>
+        <div class="bars" id="dq-bars">
+          <div class="muted">Ещё не запускался в этой сессии.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Проекты</h2>
+        <div class="grid-projects" id="projects"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var REPO = "https://github.com/kepanasyuke/de-portfolio/blob/main/";
+  var state = { actions: [], projects: [], busy: false, dq: null };
+
+  function el(id) { return document.getElementById(id); }
+
+  function api(path, options) {
+    return fetch(path, options).then(function (response) {
+      if (!response.ok) { throw new Error("HTTP " + response.status + " " + path); }
+      return response.json();
+    });
+  }
+
+  function pill(text, cls) {
+    var span = document.createElement("span");
+    span.className = "pill" + (cls ? " " + cls : "");
+    span.textContent = text;
+    return span;
+  }
+
+  function renderPills(data) {
+    var host = el("pills");
+    host.textContent = "";
+    var doctorText = data.doctor || "";
+    var dockerOk = doctorText.indexOf("[OK  ] docker") !== -1;
+    host.appendChild(pill("docker: " + (dockerOk ? "ok" : "проверь"), dockerOk ? "ok" : "bad"));
+    host.appendChild(pill("свободно: " + data.disk_free_gb + " ГБ", data.disk_free_gb >= 6 ? "ok" : "bad"));
+    host.appendChild(pill(".env: " + (data.env_present ? "есть" : "нет"), data.env_present ? "ok" : "bad"));
+    host.appendChild(pill("site/: " + (data.site_built ? "собран" : "нет"), data.site_built ? "ok" : "bad"));
+    host.appendChild(pill("сервисов: " + (data.services || []).length));
+  }
+
+  function renderServices(rows) {
+    var body = el("services").querySelector("tbody");
+    body.textContent = "";
+    if (!rows || rows.length === 0) {
+      var empty = document.createElement("tr");
+      var cell = document.createElement("td");
+      cell.colSpan = 3;
+      cell.className = "muted";
+      cell.textContent = "контейнеры не запущены";
+      empty.appendChild(cell);
+      body.appendChild(empty);
+      return;
+    }
+    rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      var name = document.createElement("td");
+      name.textContent = row.service;
+      var current = document.createElement("td");
+      current.className = "state";
+      current.textContent = row.state;
+      var health = document.createElement("td");
+      health.className = "muted";
+      health.textContent = row.health || "—";
+      tr.appendChild(name);
+      tr.appendChild(current);
+      tr.appendChild(health);
+      body.appendChild(tr);
+    });
+  }
+
+  function renderActions() {
+    var host = el("actions");
+    host.textContent = "";
+    state.actions.forEach(function (action) {
+      var button = document.createElement("button");
+      button.className = "action" + (action.danger ? " danger" : "");
+      button.dataset.name = action.name;
+      var title = document.createElement("span");
+      title.className = "t";
+      title.textContent = action.title;
+      var description = document.createElement("span");
+      description.className = "d";
+      description.textContent = action.description;
+      button.appendChild(title);
+      button.appendChild(description);
+      button.addEventListener("click", function () { run(action.name, action.title); });
+      host.appendChild(button);
+    });
+  }
+
+  function renderProjects() {
+    var host = el("projects");
+    host.textContent = "";
+    state.projects.forEach(function (project) {
+      var card = document.createElement("div");
+      card.className = "project";
+      var image = document.createElement("img");
+      image.src = "/assets/" + project.animation;
+      image.alt = project.title;
+      image.loading = "lazy";
+      var body = document.createElement("div");
+      body.className = "body";
+      var title = document.createElement("h3");
+      title.textContent = project.id + " · " + project.title;
+      var summary = document.createElement("p");
+      summary.textContent = project.summary;
+      var readme = document.createElement("a");
+      readme.href = REPO + project.readme;
+      readme.target = "_blank";
+      readme.rel = "noreferrer";
+      readme.textContent = "README";
+      body.appendChild(title);
+      body.appendChild(summary);
+      body.appendChild(readme);
+      card.appendChild(image);
+      card.appendChild(body);
+      host.appendChild(card);
+    });
+  }
+
+  function renderDq(data) {
+    var host = el("dq-bars");
+    host.textContent = "";
+    if (!data || !data.total) {
+      var empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "Ещё не запускался в этой сессии.";
+      host.appendChild(empty);
+      return;
+    }
+    var rows = [
+      { label: "passed", value: data.passed, color: "#4dd4ac" },
+      { label: "warned", value: data.warned, color: "#ffb454" },
+      { label: "failed", value: data.failed, color: "#ff6b6b" }
+    ];
+    rows.forEach(function (row) {
+      var wrapper = document.createElement("div");
+      wrapper.className = "bar-row";
+      var label = document.createElement("span");
+      label.textContent = row.label;
+      var track = document.createElement("span");
+      track.className = "bar";
+      var fill = document.createElement("i");
+      fill.style.width = Math.round((row.value / data.total) * 100) + "%";
+      fill.style.background = row.color;
+      track.appendChild(fill);
+      var count = document.createElement("span");
+      count.textContent = row.value + "/" + data.total;
+      wrapper.appendChild(label);
+      wrapper.appendChild(track);
+      wrapper.appendChild(count);
+      host.appendChild(wrapper);
+    });
+    var meta = document.createElement("div");
+    meta.className = "muted";
+    meta.style.marginTop = "6px";
+    meta.textContent = "run_id " + data.run_id + " · " + data.elapsed_ms + " мс";
+    host.appendChild(meta);
+  }
+
+  function renderLog(payload) {
+    el("log-title").textContent = payload.title || "Готово";
+    el("log-title").className = payload.ok ? "ok" : "bad";
+    el("log-time").textContent = payload.at || "";
+    el("log-body").textContent = payload.output || "(пусто)";
+  }
+
+  function setBusy(busy) {
+    state.busy = busy;
+    Array.prototype.forEach.call(document.querySelectorAll("button.action"), function (button) {
+      button.disabled = busy;
+    });
+  }
+
+  function run(name, title) {
+    if (state.busy) { return; }
+    setBusy(true);
+    var started = document.createElement("div");
+    started.textContent = "… " + title;
+    renderLog({ title: title + " — выполняется", ok: true, output: "запрос ушёл, ждём ответ…", at: "" });
+    api("/api/action/" + encodeURIComponent(name), { method: "POST" })
+      .then(function (payload) {
+        renderLog(payload);
+        if (payload.data && payload.data.services) { renderServices(payload.data.services); }
+        if (payload.data && typeof payload.data.total === "number") { state.dq = payload.data; renderDq(payload.data); }
+        if (payload.data && payload.data.disk_free_gb !== undefined) { renderPills(payload.data); }
+      })
+      .catch(function (error) { renderLog({ title: "Ошибка", ok: false, output: String(error), at: "" }); })
+      .then(function () { setBusy(false); });
+  }
+
+  function refreshStatus() {
+    api("/api/status")
+      .then(function (payload) { renderPills(payload.data); renderServices(payload.data.services); })
+      .catch(function (error) { renderLog({ title: "Статус недоступен", ok: false, output: String(error), at: "" }); });
+  }
+
+  api("/api/catalog")
+    .then(function (payload) { state.actions = payload.actions; state.projects = payload.projects; renderActions(); renderProjects(); })
+    .catch(function (error) { renderLog({ title: "Каталог недоступен", ok: false, output: String(error), at: "" }); });
+
+  refreshStatus();
+  setInterval(refreshStatus, 20000);
+})();
+</script>
+</body>
+</html>

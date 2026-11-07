@@ -4,29 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Портфолио Data Engineer · 6 проектов</title>
+<link rel="stylesheet" href="assets/theme.css">
 <style>
-  :root {
-    --bg: #070b18;
-    --panel: #101830;
-    --panel-2: #131d3a;
-    --ink: #e8eefc;
-    --muted: #8ea0c9;
-    --accent: #4dd4ac;
-    --warn: #ffb454;
-    --line: #22305a;
-  }
-  * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body {
-    margin: 0;
-    background:
-      radial-gradient(1400px 700px at 12% -12%, #1a2a55 0%, transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, #123b34 0%, transparent 55%),
-      var(--bg);
-    color: var(--ink);
-    font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
-  }
-  .page { width: min(1120px, 100%); margin: 0 auto; padding: 48px 20px 80px; }
+  body { font-size: 16px; line-height: 1.6; padding: 0; }
+  .page { width: min(1120px, 100%); padding: 48px 20px 80px; }
 
   header.hero { margin-bottom: 40px; }
   .eyebrow {
@@ -60,7 +42,13 @@
     padding: 4px 10px;
   }
 
-  h2.section { font-size: 20px; margin: 56px 0 6px; letter-spacing: .2px; }
+  h2.section {
+    font-size: 20px;
+    margin: 56px 0 6px;
+    letter-spacing: .2px;
+    text-transform: none;
+    color: var(--ink);
+  }
   .section-note { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
 
   .grid { display: grid; gap: 22px; }
@@ -106,14 +94,6 @@
   th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .7px; background: #0f1730; }
   tr:last-child td { border-bottom: none; }
-  td code, p code, li code {
-    background: #182245;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 1px 6px;
-    font-size: 12.5px;
-    font-family: Consolas, "Cascadia Mono", monospace;
-  }
 
   .game-banner {
     margin-top: 22px;
@@ -132,7 +112,6 @@
   .game-banner img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); }
 
   footer { margin-top: 64px; color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 20px; }
-  footer a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -273,18 +252,18 @@
     </article>
 
     <article class="card">
-      <img class="anim" src="assets/anim-game.svg" alt="Игра: три пайплайна, очереди, карантин">
+      <img class="anim" src="assets/anim-game.svg" alt="Труба пайплайна: сетка модулей и ветка в карантин">
       <div class="body">
         <div class="num">06 · Игра</div>
-        <h3>«Пайплайн: ночной релиз»</h3>
-        <p>Аркада про то же, о чём остальные пять проектов: поток растёт, часть записей
-           грязная, очередь упирается в ёмкость модуля. Три пайплайна, шесть волн,
-           бюджет на апгрейды.</p>
+        <h3>«Труба пайплайна»</h3>
+        <p>Сеточная головоломка: поворачивай модули кликом и доведи чистые записи до
+           витрины, а грязные уведи через Clean в карантин. Пока труба дырявая,
+           записи стоят в тупике и теряются.</p>
         <ul>
-          <li><b>Backpressure</b> видно глазами: очередь &gt; 10 → таймауты и падение SLO</li>
-          <li><b>Два компромисса</b>: ёмкость против точности, скорость против качества</li>
-          <li><b>Карантин не снижает SLO</b> — игра наказывает за протечку в DWH</li>
-          <li>Один HTML-файл, canvas, фиксированный шаг 1/60 с</li>
+          <li><b>Топология важнее скорости</b>: без соединения поток не идёт вообще</li>
+          <li><b>Clean — это DQ</b>: грязная уходит вбок, забыл повернуть — протечка в DWH</li>
+          <li><b>Backpressure</b>: тупик держит запись 2.5 с, потом она в потерях</li>
+          <li>Уровни проверены солвером: <code>tests/test_levels.py</code></li>
         </ul>
         <div class="links">
           <a class="primary" href="../06-pipeline-game/index.html">Играть</a>
@@ -352,8 +331,8 @@
     <div>
       <h3>Хочешь сразу поиграть?</h3>
       <p>Игра открывается локально, без сборки и сервера: один HTML-файл.
-         Полезно, чтобы за две минуты объяснить, что такое backpressure и почему
-         «добавим ретраев» не лечит очередь.</p>
+         Полезно, чтобы за две минуты объяснить две вещи: почему без соединения
+         поток не идёт вообще и почему тупик в трубе лечат ёмкостью, а не ретраями.</p>
       <div class="links">
         <a class="primary" href="../06-pipeline-game/index.html">Открыть игру</a>
         <a href="../README.md">Корневой README</a>

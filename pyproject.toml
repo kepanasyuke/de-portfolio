@@ -1,5 +1,5 @@
 [project]
-name = "de-portfolio"
+name = "data-engineering-portfolio"
 version = "0.1.0"
 description = "Portfolio of production-grade data engineering projects (Airflow, Spark, Kafka, DWH, data quality)"
 requires-python = ">=3.10"

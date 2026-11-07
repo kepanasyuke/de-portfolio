@@ -6,6 +6,7 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__EXECUTOR: SequentialExecutor
   AIRFLOW__CORE__PARALLELISM: "4"
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+  AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
   AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
   PORTFOLIO_ROOT: /opt/project
   PYTHONPATH: /opt/project:/opt/project/03-dq-framework
@@ -25,7 +26,6 @@ x-airflow-volumes: &airflow-volumes
   - ./:/opt/project
   - airflow_home:/opt/airflow
   - ivy_cache:/home/airflow/.ivy2
-  - ivy_cache_local:/home/airflow/.ivy2.5.2
 
 services:
   postgres:
@@ -44,7 +44,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-dwh} -d $${POSTGRES_DB:-dwh}"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
 
   kafka:
     image: apache/kafka:3.7.0
@@ -64,9 +64,11 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
       - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
 
   minio:
-    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    image: pgsty/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
@@ -76,23 +78,26 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   minio-init:
-    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    image: pgsty/mc:latest
     depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set lake http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin} &&
-      mc mb --ignore-existing lake/${S3_BUCKET:-lake} &&
-      mc mb --ignore-existing lake/${S3_BUCKET:-lake}/landing &&
-      echo 'minio ready'"
+      - minio
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-lake}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set lake http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" >/dev/null 2>&1; do
+          echo "waiting for minio..."
+          sleep 3
+        done
+        mc mb --ignore-existing "lake/$$S3_BUCKET"
+        mc ls "lake/$$S3_BUCKET"
+        echo "minio bucket ready"
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
@@ -106,6 +111,11 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./04-clickhouse-marts/sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   spark-master:
     image: apache/spark:3.5.1
@@ -140,9 +150,11 @@ services:
     build:
       context: ./docker/airflow
     image: de-portfolio/airflow:2.9.3
-    command: ["bash", "-lc", "airflow standalone"]
+    command: ["bash", "/opt/project/scripts/airflow_start.sh"]
     environment:
       <<: *airflow-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
     ports:
       - "8080:8080"
     volumes: *airflow-volumes
@@ -151,10 +163,16 @@ services:
         condition: service_healthy
       kafka:
         condition: service_started
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_started
       spark-master:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
 
   dq-exporter:
     build:
@@ -175,13 +193,15 @@ services:
     image: prom/prometheus:v2.53.0
     volumes:
       - ./03-dq-framework/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
 
   grafana:
     image: grafana/grafana:11.1.0
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/dwh-dq.json
     volumes:
@@ -195,9 +215,10 @@ services:
 
 volumes:
   pgdata:
+  kafka_data:
   minio_data:
   clickhouse_data:
+  prometheus_data:
   grafana_data:
   airflow_home:
   ivy_cache:
-  ivy_cache_local:

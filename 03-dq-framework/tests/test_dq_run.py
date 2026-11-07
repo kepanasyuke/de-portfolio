@@ -318,3 +318,32 @@ def test_write_report_includes_elapsed_and_fail_on(tmp_path):
     assert payload["run_id"] == "run-9"
     assert payload["elapsed_ms"] == 42
     assert payload["fail_on"] == "warn"
+
+
+def test_unexpected_failure_returns_exit_code_two(capsys, monkeypatch):
+    """A broken cursor must not surface as a traceback: pipelines read the code."""
+    connection = FakeConnection(row=(0, 1))
+    monkeypatch.setattr(run, "load_rules", lambda path: [make_rule()])
+    monkeypatch.setattr(run, "_connect", lambda dsn: connection)
+
+    def explode(rules_connection, rules):
+        raise RuntimeError("cursor is gone")
+
+    monkeypatch.setattr(run, "_collect", explode)
+    code = run.main(["--rules", "rules.yml", "--no-persist"])
+    assert code == 2
+    assert "run failed" in capsys.readouterr().err
+    assert connection.closed is True
+
+
+def test_unexpected_failure_still_closes_the_connection(monkeypatch):
+    connection = FakeConnection(row=(0, 1))
+    monkeypatch.setattr(run, "load_rules", lambda path: [make_rule()])
+    monkeypatch.setattr(run, "_connect", lambda dsn: connection)
+
+    def explode(rules_connection, rules):
+        raise OSError("socket closed")
+
+    monkeypatch.setattr(run, "_collect", explode)
+    run.main(["--rules", "rules.yml", "--no-persist"])
+    assert connection.closed is True

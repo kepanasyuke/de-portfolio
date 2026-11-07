@@ -1,29 +1,41 @@
-SHELL := /bin/bash
-COMPOSE := docker compose
-PY := python
+# Portable Makefile: every recipe is a single `python script.py` or `docker compose` call,
+# so the same targets work in PowerShell, Git Bash and WSL.
+PY ?= python
+COMPOSE ?= docker compose
+PORT ?= 8000
+CONSOLE_PORT ?= 8088
+SOURCE_DSN ?= postgresql://dwh:dwh@localhost:5432/dwh
+TARGET_DSN ?= http://localhost:8123/marts
+DWH_DSN_LOCAL ?= postgresql://dwh:dwh@localhost:5432/dwh
+BENCH_ROWS ?= 200000
 
-PACKAGES := org.apache.hadoop:hadoop-aws:3.3.4,\
-com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-org.postgresql:postgresql:42.7.3,\
-org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
+# UTF-8 for every child process: otherwise Cyrillic output becomes cp866 mush on Windows.
+export PYTHONUTF8 := 1
 
-.PHONY: help up down ps logs jars landing stream dq test lint fmt psql ch showcase game clean
+.DEFAULT_GOAL := help
+.PHONY: help env compose-check doctor up up-core down ps logs landing landing-upload stream dq parity bench \
+        test lint fmt site console serve tunnel psql showcase game clean
 
 help:
-	@echo "up        - поднять весь стек (postgres, kafka, minio, spark, airflow, clickhouse, prometheus, grafana)"
-	@echo "down      - остановить стек"
-	@echo "jars      - один раз скачать jar-зависимости Spark в общий ivy-кэш"
-	@echo "landing   - сгенерировать синтетический landing-слой (CSV) локально"
-	@echo "stream    - запустить Kafka -> Spark streaming джобу в контейнере"
-	@echo "dq        - прогнать data-quality проверки против локального DWH"
-	@echo "test      - pytest по всем проектам"
-	@echo "lint      - контракт стиля (один выход, без continue, вложенность ≤ 2) + ruff"
-	@echo "psql      - psql внутрь контейнера postgres"
-	@echo "showcase  - открыть docs/index.html в браузере"
-	@echo "game      - открыть игру 06-pipeline-game/index.html"
+	@$(PY) scripts/help.py --port $(PORT)
 
-up:
+env:
+	@$(PY) scripts/ensure_env.py
+
+compose-check:
+	@$(PY) scripts/check_compose.py
+
+doctor:
+	@$(PY) scripts/doctor.py
+
+up: env compose-check
 	$(COMPOSE) --env-file .env up -d --build
+	@$(PY) scripts/doctor.py
+
+# Light subset for machines where the full stack does not fit on disk (~6 GB of images).
+up-core: env compose-check
+	$(COMPOSE) --env-file .env up -d postgres minio minio-init kafka
+	@$(PY) scripts/doctor.py
 
 down:
 	$(COMPOSE) --env-file .env down -v
@@ -34,27 +46,25 @@ ps:
 logs:
 	$(COMPOSE) --env-file .env logs -f airflow
 
-jars:
-	$(COMPOSE) --env-file .env exec airflow spark-submit --packages $(PACKAGES) /opt/project/scripts/warm_jars.py
-
 landing:
-	$(PY) -m ingestion.generate_landing --out data/landing --date $(shell date +%Y-%m-%d) --orders 800
-	$(PY) -m ingestion.upload_landing --dir data/landing --date $(shell date +%Y-%m-%d)
+	$(PY) scripts/landing.py
+
+landing-upload:
+	$(PY) scripts/landing.py --upload
 
 stream:
 	$(COMPOSE) --env-file .env exec airflow bash /opt/project/scripts/run_stream.sh
 
 dq:
-	PYTHONPATH=03-dq-framework $(PY) -m dq.run --rules 03-dq-framework/dq/rules.yml \
-		--dsn "$${DWH_DSN_LOCAL:-postgresql://dwh:dwh@localhost:5432/dwh}"
+	$(PY) scripts/run_dq.py --rules 03-dq-framework/dq/rules.yml --dsn "$(DWH_DSN_LOCAL)"
 
 parity:
-	PYTHONPATH=05-migration-parity $(PY) -m parity.cli --spec 05-migration-parity/specs/orders.json \
-		--source-dialect postgres --source-dsn "$${DWH_DSN_LOCAL:-postgresql://dwh:dwh@localhost:5432/dwh}" \
-		--target-dialect clickhouse --target-dsn "http://localhost:8123/marts" --buckets 8
+	$(PY) scripts/run_parity.py --spec 05-migration-parity/specs/orders.json \
+		--source-dialect postgres --source-dsn "$(SOURCE_DSN)" \
+		--target-dialect clickhouse --target-dsn "$(TARGET_DSN)" --buckets 8
 
 bench:
-	$(PY) 04-clickhouse-marts/bench/benchmark.py --runs 5 --rows 200000
+	$(PY) 04-clickhouse-marts/bench/benchmark.py --runs 5 --rows $(BENCH_ROWS)
 
 test:
 	$(PY) -m pytest
@@ -66,14 +76,30 @@ lint:
 fmt:
 	$(PY) -m ruff format .
 
+site:
+	$(PY) scripts/build_site.py --out site
+	@echo "Сайт: http://localhost:$(PORT)/  (Ctrl+C — остановить)"
+	$(PY) -m http.server $(PORT) --directory site
+
+console:
+	@echo "Консоль: http://localhost:$(CONSOLE_PORT)/  (Ctrl+C — остановить)"
+	$(PY) scripts/run_console.py --port $(CONSOLE_PORT)
+
+serve:
+	@echo "Сайт: http://localhost:$(PORT)/  (Ctrl+C — остановить)"
+	$(PY) -m http.server $(PORT) --directory site
+
+tunnel:
+	cloudflared tunnel --url http://localhost:$(PORT) --no-autoupdate
+
 psql:
-	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-dwh} -d $${POSTGRES_DB:-dwh}
+	$(COMPOSE) --env-file .env exec postgres psql -U dwh -d dwh
 
 showcase:
-	$(PY) -c "import webbrowser, pathlib; webbrowser.open(pathlib.Path('docs/index.html').resolve().as_uri())"
+	$(PY) scripts/open_page.py docs/index.html
 
 game:
-	$(PY) -c "import webbrowser, pathlib; webbrowser.open(pathlib.Path('06-pipeline-game/index.html').resolve().as_uri())"
+	$(PY) scripts/open_page.py 06-pipeline-game/index.html
 
 clean:
-	rm -rf data .pytest_cache .ruff_cache
+	$(PY) scripts/clean.py
